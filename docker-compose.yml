@@ -1,0 +1,89 @@
+# IntentGate, single-host install.
+# Three services: Postgres (state), the gateway (the checkpoint agents call
+# on :8080), and the Console Pro (the web UI you open on :3000).
+# Values come from the .env file next to this file. Run it with install.sh
+# (Linux/Mac) or install.ps1 (Windows), which fills the secrets for you.
+#
+# Images are the published releases. Pin the version with IMAGE_TAG in .env.
+
+name: intentgate
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: intentgate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: intentgate
+    volumes:
+      - intentgate-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intentgate"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  gateway:
+    image: ghcr.io/intentgate-app/intentgate-gateway:${IMAGE_TAG:-1.6.2}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      INTENTGATE_ADDR: ":8080"
+      INTENTGATE_MASTER_KEY: ${INTENTGATE_MASTER_KEY}
+      INTENTGATE_ADMIN_TOKEN: ${INTENTGATE_ADMIN_TOKEN}
+      INTENTGATE_POSTGRES_URL: "postgres://intentgate:${POSTGRES_PASSWORD}@postgres:5432/intentgate?sslmode=disable"
+      # Enforcement checks. Leave on; the policy decides allow/deny.
+      INTENTGATE_REQUIRE_CAPABILITY: "true"
+      INTENTGATE_REQUIRE_INTENT: "true"
+      INTENTGATE_REQUIRE_BUDGET: "true"
+      INTENTGATE_POLICY_STORE: "postgres"
+      INTENTGATE_APPROVALS_BACKEND: "postgres"
+      INTENTGATE_APPROVAL_TIMEOUT_S: "30"
+      # Audit and metrics power the console. Keep on.
+      INTENTGATE_AUDIT_PERSIST: "true"
+      INTENTGATE_AUDIT_TARGET: "stdout"
+      INTENTGATE_METRICS_ENABLED: "true"
+      INTENTGATE_PROVENANCE_ENABLED: "true"
+      # Reply-side data protection (redact PII / block secrets on output).
+      INTENTGATE_PII_FILTER_ENABLED: "true"
+      INTENTGATE_PII_DEFAULT_ACTION: "redact"
+      # Where the gateway forwards ALLOWED calls (your real tool server).
+      # Set this to your tool/MCP endpoint. Left blank until you have one.
+      INTENTGATE_UPSTREAM_URL: ${INTENTGATE_UPSTREAM_URL:-}
+    ports:
+      - "${GATEWAY_BIND:-127.0.0.1}:8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  console:
+    image: ghcr.io/intentgate-app/intentgate-console-pro:${IMAGE_TAG:-1.6.2}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    environment:
+      INTENTGATE_GATEWAY_URL: "http://gateway:8080"
+      INTENTGATE_PUBLIC_GATEWAY_URL: ${INTENTGATE_PUBLIC_GATEWAY_URL:-http://localhost:8080}
+      INTENTGATE_ADMIN_TOKEN: ${INTENTGATE_ADMIN_TOKEN}
+      INTENTGATE_LICENSE_KEY: ${INTENTGATE_LICENSE_KEY:-}
+      LAB_CREDENTIALS_DATABASE_URL: "postgres://intentgate:${POSTGRES_PASSWORD}@postgres:5432/intentgate?sslmode=disable"
+      # Sign-in. "mock" lets you log in immediately for the first smoke test.
+      # For production set AUTH_PROVIDER to your OIDC provider (Entra) and fill
+      # the OIDC_* values, and set AUTH_URL to your real https hostname.
+      AUTH_PROVIDER: ${AUTH_PROVIDER:-mock}
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_URL: ${AUTH_URL:-}
+      AUTH_TRUST_HOST: "true"
+    ports:
+      - "${CONSOLE_BIND:-0.0.0.0}:3000:3000"
+
+volumes:
+  intentgate-db:
