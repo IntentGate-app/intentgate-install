@@ -45,7 +45,29 @@ if (-not (Test-Path ".env")) {
 # --- step 3: pull images ---
 Say "Step 3 of 5  Downloading IntentGate (published images)"
 Info "This is a one-time download of the gateway, console, and database."
-Invoke-Expression "$compose pull"
+try { Invoke-Expression "$compose pull" }
+catch {
+  Write-Host ""
+  Die @"
+Could not download the IntentGate images.
+
+     The IntentGate images are PRIVATE, so this machine has to log in to
+     the image registry (ghcr.io) once before it can download them.
+
+     1. Get an access token from IntentGate (a GitHub token with the one
+        permission: read:packages).
+     2. Log in on this machine (paste the token when asked for a password):
+
+          docker login ghcr.io -u <your-github-username>
+
+     3. Run this installer again:
+
+          powershell -ExecutionPolicy Bypass -File .\install.ps1
+
+     If you saw 'unauthorized' just above, this is the reason.
+"@
+}
+if ($LASTEXITCODE -ne 0) { Die "Image download failed. See the message above." }
 OK "Images downloaded."
 
 # --- step 4: start ---

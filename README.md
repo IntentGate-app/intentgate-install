@@ -10,6 +10,22 @@ You need **Docker** running:
 
 That is the only prerequisite. The installer downloads everything else.
 
+## Log in to the image registry (one time)
+
+The IntentGate images are **private**, so each install machine has to log in
+to the registry (`ghcr.io`) once before it can download them.
+
+1. Ask IntentGate for an access token (a GitHub token with the single
+   permission `read:packages`).
+2. On the install machine, log in and paste the token when it asks for a
+   password:
+   ```bash
+   docker login ghcr.io -u <your-github-username>
+   ```
+
+You only do this once per machine. If you skip it, the installer stops at the
+download step with an `unauthorized` message and reminds you to log in.
+
 ## Install
 
 Put this `install` folder on the machine that will run IntentGate, open a terminal in it, and run the one command for your system.

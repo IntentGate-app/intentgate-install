@@ -53,7 +53,25 @@ fi
 # --- step 3: pull images -----------------------------------------------
 say "Step 3 of 5  Downloading IntentGate (published images)"
 info "This is a one-time download of the gateway, console, and database."
-$COMPOSE pull
+if ! $COMPOSE pull; then
+  echo
+  die "Could not download the IntentGate images.
+
+     The IntentGate images are PRIVATE, so this machine has to log in to
+     the image registry (ghcr.io) once before it can download them.
+
+     1. Get an access token from IntentGate (a GitHub token with the one
+        permission: read:packages).
+     2. Log in on this machine (paste the token when asked for a password):
+
+          docker login ghcr.io -u <your-github-username>
+
+     3. Run this installer again:
+
+          ./install.sh
+
+     If you saw 'unauthorized' just above, this is the reason."
+fi
 ok "Images downloaded."
 
 # --- step 4: start ------------------------------------------------------
