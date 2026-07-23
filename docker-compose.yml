@@ -62,7 +62,11 @@ services:
       retries: 30
 
   console:
-    image: ghcr.io/intentgate-app/intentgate-console-pro:${IMAGE_TAG:-1.6.2}
+    # Console-pro revs independently of the gateway. Pin it with
+    # CONSOLE_IMAGE_TAG; otherwise it tracks the current console release
+    # regardless of the gateway's IMAGE_TAG pin. 1.6.3 ships the operational
+    # Settings Hub.
+    image: ghcr.io/intentgate-app/intentgate-console-pro:${CONSOLE_IMAGE_TAG:-1.6.3}
     restart: unless-stopped
     depends_on:
       postgres:
