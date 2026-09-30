@@ -672,6 +672,11 @@ class ReleaseInputGuard(unittest.TestCase):
         self.assertNotEqual(rc, 0)
         self.assertIn("MUTABLE_REFERENCE: ha.yml", o)
 
+    def test_map_form_image_key_is_not_a_reference(self) -> None:
+        self.commit("values.yaml", 'components:\n  a:\n    image:\n      repository: "ghcr.io/x/a"\n      digest: "sha256:' + "1" * 64 + '"\n')
+        rc, o = self.guard()
+        self.assertEqual(rc, 0, o)
+
     def test_tagged_image(self) -> None:
         self.commit("c.yml", "services:\n  p:\n    image: postgres:16-alpine\n")
         rc, o = self.guard()

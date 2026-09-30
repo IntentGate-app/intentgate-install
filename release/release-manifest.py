@@ -59,7 +59,7 @@ REPO_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*(\.[a-z0-9._-]+)*(:[0-9]+)?(/[a-z0-9
 # A mutable reference: an explicit `latest`, a `${X:-latest}` default, or an image ref with a tag
 # and no digest. Checked over whole files and over the manifest text.
 MUTABLE_TEXT_RE = re.compile(r"(:-latest\}|:latest\b|\"latest\"|'latest')")
-IMAGE_LINE_RE = re.compile(r"^\s*(?:-\s*)?image:\s*[\"']?([^\"'\s#]+)", re.M)
+IMAGE_LINE_RE = re.compile(r"^[ \t]*(?:-[ \t]*)?image:[ \t]*[\"']?([^\"'\s#]+)", re.M)  # never crosses a line: `image:` as a map key is not a ref
 UNRESOLVED_PREFIX = "${INTENTGATE_UNRESOLVED_"
 
 REQUIRED_COMPONENTS = ["console-pro", "platform-gateway", "governance-worker", "gateway", "extractor", "postgres"]

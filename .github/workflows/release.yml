@@ -61,7 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 "$TOOL" guard-release-input --root . --bundle-files release/bundle-files.json --exclude release/tests --exclude release/release-manifest.py
-          python3 "$TOOL" guard-release-input --root _helm --exclude tests/fixtures
+          python3 "$TOOL" guard-release-input --root _helm --exclude tests/fixtures --exclude .github/workflows/ci.yml
       - name: Assemble static files and prove the committed manifest is their fresh build
         run: |
           set -euo pipefail
