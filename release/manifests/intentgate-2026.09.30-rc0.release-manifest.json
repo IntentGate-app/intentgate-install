@@ -29,7 +29,7 @@
       "release/evidence/platform-gateway/build-attribution.json": "0e33761faaff5658635e834b4e1c7700326f95c4935d011df5beda46b5e2fcb5",
       "release/evidence/platform-gateway/sbom.json": "053cc480d92714f2d782f5540c021d35edbab28bba616498364c5d6058b53401",
       "release/evidence/platform-gateway/signing-record.json": "335a2ead65da23f6a10bb0b270f6776f51ac2eeb8f81b70c28d61135b18c84ad",
-      "release/release-manifest.py": "6bea52752454b0633ed3449814cda30400db0512b6440fc46b0c8ab02fee0460",
+      "release/release-manifest.py": "8fbeee79c0dbac5ac545b1ab34b0a598dbabafe3062df9aa5a41bfc0c7a2f2af",
       "release/release-manifest.schema.json": "2a3477d6076ca727669e7710947ffbc722b8a3012aedc304c4571a1e745e4cb9",
       "release/trust/release-key-set.json": "4545626c99fa6c2aaf3d6fe22de8325152420d4e6c344fa8baadd0590caeac57",
       "release/trust/release-trust-anchor.json": "7c5975f5957f27bbb8177e2d9978f1840b0d5058a999170ae4753af4b83305fe"
@@ -426,8 +426,8 @@
   "product": "IntentGate",
   "provenance": {
     "generator": "release/release-manifest.py",
-    "generator_sha256": "6bea52752454b0633ed3449814cda30400db0512b6440fc46b0c8ab02fee0460",
-    "inputs": "../../../../../../../home/claude/w/install/release/inputs/intentgate-2026.09.30-rc0.inputs.json",
+    "generator_sha256": "8fbeee79c0dbac5ac545b1ab34b0a598dbabafe3062df9aa5a41bfc0c7a2f2af",
+    "inputs": "release/inputs/intentgate-2026.09.30-rc0.inputs.json",
     "inputs_sha256": "13d0aa3fd961b6824bc66c944b70c39ded365d420e2f5008a376b1dfc989413f"
   },
   "releasable": false,
