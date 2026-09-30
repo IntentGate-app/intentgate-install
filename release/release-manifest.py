@@ -435,7 +435,8 @@ def build(args: argparse.Namespace) -> int:
         "bundle": {"static": static, "rendered": sorted(bf["rendered"]),
                    "generated_at_install": sorted(bf["generated_at_install"])},
         "provenance": {"generator": "release/release-manifest.py", "generator_sha256": sha256_file(os.path.abspath(__file__)),
-                       "inputs": os.path.relpath(os.path.abspath(args.inputs), root), "inputs_sha256": sha256_file(args.inputs)},
+                       "inputs": os.path.relpath(os.path.abspath(args.inputs), os.path.dirname(base)),  # repo-relative: deterministic across hosts
+                       "inputs_sha256": sha256_file(args.inputs)},
     }
     m["releasable_blockers"] = compute_blockers(m)
     m["releasable"] = not m["releasable_blockers"]
