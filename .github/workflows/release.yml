@@ -69,6 +69,37 @@ jobs:
           python3 "$TOOL" build --inputs "release/inputs/$(basename "${{ inputs.manifest }}" .release-manifest.json).inputs.json" \
             --contract "$S/release/config-contract.json" --bundle-files release/bundle-files.json --bundle-root "$S" --out "$RUNNER_TEMP/fresh.json"
           cmp "$RUNNER_TEMP/fresh.json" "${{ inputs.manifest }}"
+      - name: Re-verify the independent review gate (never trust the committed copy)
+        # Owner direction 2026-09-30: release eligibility = INDEPENDENT_REVIEW=GREEN AND every deterministic gate GREEN.
+        # The inputs' independent_review block is only a pointer: the signed review record, the sealed bundle and the
+        # gate results are downloaded from the lab review workflow run it names and re-judged here by irb.py gate
+        # (signature, bundle binding, independence, findings, no waivers). Any difference => the release stops.
+        env:
+          GH_TOKEN: ${{ secrets.ACCEPTANCE_KIT_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          IN="release/inputs/$(basename "${{ inputs.manifest }}" .release-manifest.json).inputs.json"
+          RUN=$(python3 -c "import json,sys;r=(json.load(open(sys.argv[1])).get('independent_review') or {});print(r.get('review_run_id',''))" "$IN")
+          if [ -z "$RUN" ]; then echo "INDEPENDENT_REVIEW_MISSING: no review run recorded; the manifest is not releasable (blocker computed)"; exit 0; fi
+          git clone --quiet --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/IntentGate-app/intentgate-lab.git" _lab
+          gh run download "$RUN" -R IntentGate-app/intentgate-lab -n independent-review -D "$RUNNER_TEMP/review"
+          R="$RUNNER_TEMP/review"
+          PREV=(); [ -f "$R/previous-record.json" ] && PREV=(--previous "$R/previous-record.json")
+          python3 _lab/review/irb.py gate --bundle "$R/bundle" --review "$R/review-record.json" --gates "$R/gates" "${PREV[@]}" \
+            | tee "$RUNNER_TEMP/gate.txt" || true
+          python3 - "$IN" "$RUNNER_TEMP/gate.txt" "$R/bundle/manifest.json" <<'PY'
+          import json, sys
+          committed = json.load(open(sys.argv[1]))["independent_review"]
+          got = dict(l.strip().split("=", 1) for l in open(sys.argv[2]) if "=" in l and not l.startswith("REASON"))
+          m = json.load(open(sys.argv[3]))
+          fresh = {"INDEPENDENT_REVIEW": got.get("INDEPENDENT_REVIEW"), "DETERMINISTIC_GATES": got.get("DETERMINISTIC_GATES"),
+                   "RELEASE_ELIGIBLE": got.get("RELEASE_ELIGIBLE"), "candidate_id": m["candidate_id"], "bundle_sha256": m["bundle_sha256"],
+                   "candidate_heads": {r["remote"].rstrip("/").rsplit("/", 1)[-1].removesuffix(".git"): r["head"] for r in m["repos"]}}
+          bad = [k for k in fresh if committed.get(k) != fresh[k]]
+          if bad:
+              sys.exit(f"INDEPENDENT_REVIEW_COPY_MISMATCH: committed {bad} differ from the re-judged gate: {json.dumps({k: fresh[k] for k in bad})}")
+          print("INDEPENDENT_REVIEW_REVERIFIED", fresh["INDEPENDENT_REVIEW"], fresh["RELEASE_ELIGIBLE"])
+          PY
       - uses: sigstore/cosign-installer@v3
       - name: Assume the CI signing identity
         uses: aws-actions/configure-aws-credentials@v4
