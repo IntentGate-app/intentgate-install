@@ -88,6 +88,12 @@ class Fixture:
             open(os.path.join(self.dir, name), "wb").write(k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
             open(os.path.join(self.dir, name + ".pub"), "wb").write(k.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
         self.inputs = self._good_inputs()
+        # owner direction 2026-09-30: releasable only with an independent review gate result for exactly these commits
+        self.inputs["independent_review"] = {
+            "INDEPENDENT_REVIEW": "GREEN", "DETERMINISTIC_GATES": "GREEN", "RELEASE_ELIGIBLE": "YES",
+            "candidate_id": "C-fixture", "bundle_sha256": "0" * 64,
+            "candidate_heads": {c["source"]["repository"].rsplit("/", 1)[-1]: c["source"]["commit"]
+                                for c in self.inputs["components"] if c.get("kind") != "third-party"}}
         self.bundle_files = {"static": ["install.sh", "README.md", "release/release-manifest.py", "release/config-contract.json"],
                              "rendered": ["docker-compose.yml", ".env.example"], "generated_at_install": [".env"]}
 
@@ -683,6 +689,37 @@ class ReleaseInputGuard(unittest.TestCase):
         self.assertIn("IMAGE_NOT_BY_DIGEST: c.yml:3: postgres:16-alpine", o)
 
 
+class IndependentReviewGate(unittest.TestCase):
+    """Owner direction 2026-09-30: a release manifest is never releasable without a GREEN independent review for
+    exactly its component commits - missing, RED, or covering other commits all block."""
+
+    def setUp(self) -> None:
+        self.f = Fixture()
+
+    def tearDown(self) -> None:
+        self.f.cleanup()
+
+    def codes(self, inputs: dict) -> set:
+        rc, o = self.f.build(inputs)
+        self.assertEqual(rc, 0, o)
+        m = json.load(open(self.f.p("release-manifest.json")))
+        return {b["code"] for b in m["releasable_blockers"]}
+
+    def test_missing_review_blocks(self) -> None:
+        i = json.loads(json.dumps(self.f.inputs)); i.pop("independent_review")
+        self.assertIn("INDEPENDENT_REVIEW_MISSING", self.codes(i))
+
+    def test_red_review_blocks(self) -> None:
+        for k, v in (("INDEPENDENT_REVIEW", "RED"), ("DETERMINISTIC_GATES", "RED"), ("RELEASE_ELIGIBLE", "NO")):
+            i = json.loads(json.dumps(self.f.inputs)); i["independent_review"][k] = v
+            self.assertIn("INDEPENDENT_REVIEW_NOT_GREEN", self.codes(i))
+
+    def test_review_of_other_commits_blocks(self) -> None:
+        i = json.loads(json.dumps(self.f.inputs)); k = sorted(i["independent_review"]["candidate_heads"])[0]
+        i["independent_review"]["candidate_heads"][k] = "f" * 40
+        self.assertIn("INDEPENDENT_REVIEW_NOT_FOR_THIS_COMMIT", self.codes(i))
+
+
 class CanonicalRc0(unittest.TestCase):
     """The committed rc0 manifest is the current build of its inputs, and it is honestly RED."""
 
@@ -699,7 +736,7 @@ class CanonicalRc0(unittest.TestCase):
                      ("gateway", "STATUS_UNACCEPTED"), ("extractor", "STATUS_UNACCEPTED"), ("extractor", "NO_IMAGE_DIGEST"),
                      ("extractor", "SOURCE_COMMIT_UNKNOWN"), ("governance-worker", "NO_ATTRIBUTION"), ("gateway", "NO_ATTRIBUTION"),
                      ("console-pro", "ANCHOR_NOT_TAGGED"), ("postgres", "THIRD_PARTY_DIGEST_UNVERIFIED"),
-                     ("*", "SCHEMA_FINGERPRINT_UNMEASURED"), ("*", "NO_MIGRATION_MANIFEST")]:
+                     ("*", "SCHEMA_FINGERPRINT_UNMEASURED"), ("*", "NO_MIGRATION_MANIFEST"), ("*", "INDEPENDENT_REVIEW_MISSING")]:
             self.assertIn(want, got)
         pg = next(c for c in m["components"] if c["name"] == "platform-gateway")
         self.assertEqual(pg["provenance_attestation"]["signature"], "VERIFIED")

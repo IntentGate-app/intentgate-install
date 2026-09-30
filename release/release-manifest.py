@@ -291,6 +291,27 @@ def compute_blockers(m: dict[str, Any]) -> list[dict[str, str]]:
 
     for d in m.get("open_owner_decisions", []):
         add("*", "OPEN_OWNER_DECISION", f"{d['id']}: {d['summary']}")
+    # Owner direction 2026-09-30 (INDEPENDENT REVIEW GATE): release eligibility requires INDEPENDENT_REVIEW=GREEN and
+    # every deterministic gate GREEN, as decided by lab review/irb.py gate for a candidate whose repository heads are
+    # exactly the commits of this manifest's components. The result is produced by the review workflow, never set by hand.
+    ir = m.get("independent_review")
+    if not ir:
+        add("*", "INDEPENDENT_REVIEW_MISSING", "no independent review gate result for this component set")
+    else:
+        if ir.get("INDEPENDENT_REVIEW") != "GREEN" or ir.get("DETERMINISTIC_GATES") != "GREEN" or ir.get("RELEASE_ELIGIBLE") != "YES":
+            add("*", "INDEPENDENT_REVIEW_NOT_GREEN", f"review gate: INDEPENDENT_REVIEW={ir.get('INDEPENDENT_REVIEW')} "
+                f"DETERMINISTIC_GATES={ir.get('DETERMINISTIC_GATES')} RELEASE_ELIGIBLE={ir.get('RELEASE_ELIGIBLE')}")
+        heads = {str(k): str(v) for k, v in (ir.get("candidate_heads") or {}).items()}
+        for c in m.get("components", []):
+            if c.get("kind") == "third-party":
+                continue
+            repo = str(c.get("source", {}).get("repository") or c.get("source", {}).get("repo") or "").rstrip("/").rsplit("/", 1)[-1]
+            repo = repo[:-4] if repo.endswith(".git") else repo
+            match = next((v for k, v in heads.items() if k.rsplit("/", 1)[-1] in (repo, repo.replace("intentgate-", ""))
+                          or repo.endswith(k)), None)
+            if match != c.get("source", {}).get("commit"):
+                add(c["name"], "INDEPENDENT_REVIEW_NOT_FOR_THIS_COMMIT",
+                    f"reviewed candidate {ir.get('candidate_id')} does not cover {repo}@{str(c.get('source', {}).get('commit'))[:12]}")
     names = [c["name"] for c in m.get("components", [])]
     for r in REQUIRED_COMPONENTS:
         if r not in names:
@@ -432,6 +453,7 @@ def build(args: argparse.Namespace) -> int:
                             "contract_version": contract["contract_version"],
                             "required_keys": sorted(k["name"] for k in contract["keys"] if k["required"])},
         "open_owner_decisions": inputs.get("open_owner_decisions", []),
+        "independent_review": inputs.get("independent_review"),
         "bundle": {"static": static, "rendered": sorted(bf["rendered"]),
                    "generated_at_install": sorted(bf["generated_at_install"])},
         "provenance": {"generator": "release/release-manifest.py", "generator_sha256": sha256_file(os.path.abspath(__file__)),
