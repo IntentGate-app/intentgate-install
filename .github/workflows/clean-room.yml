@@ -210,7 +210,7 @@ jobs:
           set -euo pipefail
           python3 release/release-manifest.py image-refs --kind helm --file "$RUNNER_TEMP/helm-manifest.yaml" > "$RUNNER_TEMP/helm-refs.txt"
           python3 release/release-manifest.py image-refs --kind compose --file docker-compose.yml > "$RUNNER_TEMP/compose-refs.txt"
-          diff "$RUNNER_TEMP/compose-refs.txt" "$RUNNER_TEMP/helm-refs.txt" && echo "PARITY=GREEN" || { echo "PARITY=RED"; exit 1; }
+          if diff "$RUNNER_TEMP/compose-refs.txt" "$RUNNER_TEMP/helm-refs.txt"; then echo "PARITY=GREEN"; else echo "PARITY=RED"; exit 1; fi
       - name: Provenance chain + smoke
         if: always()
         working-directory: ${{ runner.temp }}/ig
