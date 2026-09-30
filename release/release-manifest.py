@@ -307,8 +307,8 @@ def compute_blockers(m: dict[str, Any]) -> list[dict[str, str]]:
                 continue
             repo = str(c.get("source", {}).get("repository") or c.get("source", {}).get("repo") or "").rstrip("/").rsplit("/", 1)[-1]
             repo = repo[:-4] if repo.endswith(".git") else repo
-            match = next((v for k, v in heads.items() if k.rsplit("/", 1)[-1] in (repo, repo.replace("intentgate-", ""))
-                          or repo.endswith(k)), None)
+            norm = lambda x: re.sub(r"^intentgate-", "", str(x).rstrip("/").rsplit("/", 1)[-1].removesuffix(".git"))
+            match = next((v for k, v in heads.items() if norm(k) == norm(repo)), None)
             if match != c.get("source", {}).get("commit"):
                 add(c["name"], "INDEPENDENT_REVIEW_NOT_FOR_THIS_COMMIT",
                     f"reviewed candidate {ir.get('candidate_id')} does not cover {repo}@{str(c.get('source', {}).get('commit'))[:12]}")
