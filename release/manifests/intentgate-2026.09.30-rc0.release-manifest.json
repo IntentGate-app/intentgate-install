@@ -1,0 +1,646 @@
+{
+  "bundle": {
+    "generated_at_install": [
+      ".env"
+    ],
+    "rendered": [
+      ".env.example",
+      "docker-compose.yml",
+      "helm/intentgate/values.release.yaml"
+    ],
+    "static": {
+      "README.md": "f8850b75bfeaac162f60b3d4c1a93a07fd5d55a78faa69aa9d3767878523e9c8",
+      "helm/intentgate/.helmignore": "93f597a5476f8f890c7b8d79d98a5f72b4905687a73b36de922a3c4549329a66",
+      "helm/intentgate/Chart.yaml": "a89331e4f918ab00d9b75dff9b5bd665e17460e8233f57599816b84306017e19",
+      "helm/intentgate/LICENSE": "cbf56ba90678bbe426c4c10b4cdf772ac9a49ef58a14f274119ceafb8608143c",
+      "helm/intentgate/templates/NOTES.txt": "c64ad87dced95e50f6c85de8e27d4f1e1bd6caf12be448a31b826674c2b8947c",
+      "helm/intentgate/templates/_helpers.tpl": "1d64953f3284ffbad4a5dc4404ee3fc23e0626a1c557a19737d6da7f3a9b1638",
+      "helm/intentgate/templates/components.yaml": "104732f49647545b46aa1a0a5bf8a6120a4ec52dac58d1f11e6ab3cae87bcf2e",
+      "helm/intentgate/templates/serviceaccount.yaml": "976ccc60b5254526ed5413c6431a01eacd64f8b6ca0bebcca72488447526d8af",
+      "helm/intentgate/values.yaml": "dcf8738caf9839175c601e6167aaebecd2e32768b3d9364366ee6636cc4f47e9",
+      "install.ps1": "68d80b292c736f50271e90c0cb411a58a69ddd49dfa9b76213f1598172f6d018",
+      "install.sh": "394b77a9daa7f4e16864e42a1de7b7927e704a184f97cbf43242d85539bc106e",
+      "release/PROVENANCE.md": "b1ea10a6945a637f688d3b42dfde091de4bf9d129a11b4063f2175bc9f75918d",
+      "release/acceptance-smoke.py": "078692394c06212d7a909ce9955be2d6a144d1b54dbeede271e5958aeb8d4d61",
+      "release/config-contract.json": "c05baecef6c686d337ed375e9501c5d38a07eecfe8553408e5f6ee6467abb2af",
+      "release/evidence/console-pro/build-attribution.json": "53f775a687c307187c331628f50e1544de46c63ffb2eb795c312b76f8733ff87",
+      "release/evidence/platform-gateway-anchor-4601ca9/build-attribution.json": "ca6683ec1797ebd3a54ce26a06d1e10e0ebb2c0dbd2ed9b7df232ba942c51e7e",
+      "release/evidence/platform-gateway/attestation.signed.json": "b15f9c64030a409c1516b3d5acd93e451a691809f064b5fbd00f61ce28a774de",
+      "release/evidence/platform-gateway/build-attribution.json": "0e33761faaff5658635e834b4e1c7700326f95c4935d011df5beda46b5e2fcb5",
+      "release/evidence/platform-gateway/sbom.json": "053cc480d92714f2d782f5540c021d35edbab28bba616498364c5d6058b53401",
+      "release/evidence/platform-gateway/signing-record.json": "335a2ead65da23f6a10bb0b270f6776f51ac2eeb8f81b70c28d61135b18c84ad",
+      "release/release-manifest.py": "6bea52752454b0633ed3449814cda30400db0512b6440fc46b0c8ab02fee0460",
+      "release/release-manifest.schema.json": "2a3477d6076ca727669e7710947ffbc722b8a3012aedc304c4571a1e745e4cb9",
+      "release/trust/release-key-set.json": "4545626c99fa6c2aaf3d6fe22de8325152420d4e6c344fa8baadd0590caeac57",
+      "release/trust/release-trust-anchor.json": "7c5975f5957f27bbb8177e2d9978f1840b0d5058a999170ae4753af4b83305fe"
+    }
+  },
+  "components": [
+    {
+      "accepted_anchor": null,
+      "attribution": null,
+      "attribution_source": null,
+      "image": {
+        "digest": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+        "repository": "docker.io/library/postgres"
+      },
+      "kind": "third-party",
+      "name": "postgres",
+      "provenance_attestation": null,
+      "registry_verified": false,
+      "role": "shared product database (intentgate)",
+      "runtime": {
+        "depends_on": [],
+        "health": {
+          "compose_test": [
+            "CMD-SHELL",
+            "pg_isready -U intentgate -d intentgate -h 127.0.0.1"
+          ],
+          "kind": "exec"
+        },
+        "port": 5432,
+        "replicas": 1,
+        "revision_source": {
+          "kind": "digest-only"
+        },
+        "service": "postgres",
+        "volume": {
+          "mount": "/var/lib/postgresql/data",
+          "name": "intentgate-db"
+        }
+      },
+      "sbom": null,
+      "schema_owner": null,
+      "source": {
+        "commit": null,
+        "ref": null,
+        "repository": "https://hub.docker.com/_/postgres",
+        "upstream_version": "16 (alpine variant)"
+      },
+      "status": "THIRD_PARTY",
+      "status_evidence": "Lab image id observed in IntentGate-app/intentgate-lab@f6a5507:docs/LAB-RECOVERY-SNAPSHOT-20260930T110032Z/snapshot.txt; resolvability of this digest in the upstream registry was NOT verified (no registry access from the build host)"
+    },
+    {
+      "accepted_anchor": null,
+      "attribution": null,
+      "attribution_source": "none",
+      "image": {
+        "digest": null,
+        "repository": "ghcr.io/intentgate-app/intentgate-extractor"
+      },
+      "kind": "first-party",
+      "name": "extractor",
+      "provenance_attestation": null,
+      "role": "intent extractor (gateway runtime dependency)",
+      "runtime": {
+        "depends_on": [],
+        "health": {
+          "compose_test": [
+            "CMD-SHELL",
+            "python -c \"import socket,sys; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8090)); s.close(); sys.exit(0)\""
+          ],
+          "kind": "tcp"
+        },
+        "port": 8090,
+        "replicas": 1,
+        "revision_source": {
+          "kind": "oci-label",
+          "label": "org.opencontainers.image.revision"
+        },
+        "service": "extractor"
+      },
+      "sbom": null,
+      "schema_owner": null,
+      "source": {
+        "commit": null,
+        "ref": null,
+        "repository": "https://github.com/IntentGate-app/intentgate-extractor"
+      },
+      "status": "UNACCEPTED",
+      "status_evidence": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md §2: extractor has only release tags; the Lab runs a box-local build intentgate-lab/extractor:dev (local image id sha256:5c50c4ac..., no revision label, no registry digest)"
+    },
+    {
+      "accepted_anchor": {
+        "attribution": "evidence/platform-gateway-anchor-4601ca9/build-attribution.json",
+        "attribution_sha256": "ca6683ec1797ebd3a54ce26a06d1e10e0ebb2c0dbd2ed9b7df232ba942c51e7e",
+        "commit": "4601ca96ff8ac6634b146c23666d7fa8ea10ee4d",
+        "evidence": "IntentGate-app/intentgate-lab@f6a5507:docs/d0912-20260929T061847Z/signed-run-36396275227/build-attribution.json; lab compose.platform.yml pin",
+        "image_digest": "sha256:ebe807d39e4c933e56c98d8d4cd5a0df05e0579ac5c4210e720127903c5b4cab",
+        "kind": "tag",
+        "tag": "S1-WP-09-CLOSURE-2026-09-29"
+      },
+      "attribution": {
+        "builder_run_id": "36684322782",
+        "eligibility": "ELIGIBLE",
+        "format": "IGBA/1",
+        "path": "evidence/platform-gateway/build-attribution.json",
+        "self_report": "NOT_STAMPED",
+        "sha256": "0e33761faaff5658635e834b4e1c7700326f95c4935d011df5beda46b5e2fcb5",
+        "signing_state": "SIGNED",
+        "tree_state": "CLEAN"
+      },
+      "attribution_source": "IntentGate-app/intentgate-lab@f6a5507:docs/d0912-20260930T073154Z/signed-run-36684322782/",
+      "image": {
+        "digest": "sha256:be8a5a4e4c23d13162ca372024bc3c20b9eca38423a013bce5d65a241b0db628",
+        "repository": "ghcr.io/intentgate-app/intentgate-platform-gateway"
+      },
+      "kind": "first-party",
+      "name": "platform-gateway",
+      "provenance_attestation": {
+        "key_id": "intentgate-release-2026-01",
+        "path": "evidence/platform-gateway/attestation.signed.json",
+        "predicate_type": "https://slsa.dev/provenance/v1",
+        "sha256": "b15f9c64030a409c1516b3d5acd93e451a691809f064b5fbd00f61ce28a774de",
+        "signature": "VERIFIED",
+        "subject_digest": "sha256:be8a5a4e4c23d13162ca372024bc3c20b9eca38423a013bce5d65a241b0db628"
+      },
+      "role": "governed control plane (platform gateway)",
+      "runtime": {
+        "depends_on": [
+          "postgres"
+        ],
+        "health": {
+          "compose_test": [
+            "CMD",
+            "wget",
+            "-q",
+            "-O",
+            "/dev/null",
+            "http://localhost:4000/health"
+          ],
+          "kind": "http",
+          "path": "/health"
+        },
+        "port": 4000,
+        "replicas": 1,
+        "revision_source": {
+          "kind": "oci-label",
+          "label": "org.opencontainers.image.revision"
+        },
+        "service": "platform-gateway"
+      },
+      "sbom": {
+        "format": "CycloneDX",
+        "path": "evidence/platform-gateway/sbom.json",
+        "sha256": "053cc480d92714f2d782f5540c021d35edbab28bba616498364c5d6058b53401"
+      },
+      "schema_owner": {
+        "ddl_mechanism": "idempotent DDL at start (bootstrap.ts); numbered SQL 0001-0005 have no runner; falls back to in-memory stores if schema-ensure fails",
+        "migration_level": null
+      },
+      "source": {
+        "commit": "97178b872ccc10ca56e5f2456726b1d34b6ef983",
+        "ref": "refs/heads/s1-wp-09-rb-backport",
+        "repository": "https://github.com/IntentGate-app/intentgate-platform"
+      },
+      "status": "PROVISIONAL",
+      "status_evidence": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md §2: running 97178b8 = S1-WP-09-CLOSURE 4601ca9 + 12 untagged commits; does not contain 5 closed-by-tag packages on r1-governed-state"
+    },
+    {
+      "accepted_anchor": {
+        "attribution": null,
+        "commit": "9334199df16d6badc18f8f27e987ea8130642cb1",
+        "evidence": "IntentGate-app/intentgate-lab@f6a5507:docs/WAVE-4-CEREMONY.md (platform baseline 9334199); no worker image digest recorded for the anchor",
+        "image_digest": null,
+        "kind": "tag",
+        "tag": "LKG-WAVE4-2026-09-24"
+      },
+      "attribution": null,
+      "attribution_source": "none recovered: no IGBA/1 record for the worker exists in lab/docs",
+      "image": {
+        "digest": "sha256:d6bfafe7f494a0d6fa80257508d24d18fe3ef00f7fa9d9b7e3073fa1dd66a761",
+        "repository": "ghcr.io/intentgate-app/intentgate-platform-governance-worker"
+      },
+      "kind": "first-party",
+      "name": "governance-worker",
+      "provenance_attestation": null,
+      "role": "platform governance run substrate worker",
+      "runtime": {
+        "depends_on": [
+          "postgres"
+        ],
+        "health": {
+          "compose_test": [
+            "CMD",
+            "node",
+            "-e",
+            "require('http').get('http://127.0.0.1:4100/readyz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+          ],
+          "kind": "http",
+          "path": "/readyz"
+        },
+        "port": 4100,
+        "replicas": 1,
+        "revision_source": {
+          "field": "commit",
+          "kind": "http-json",
+          "path": "/healthz",
+          "port": 4100
+        },
+        "service": "governance-worker"
+      },
+      "sbom": null,
+      "schema_owner": {
+        "ddl_mechanism": "idempotent ensureGovernanceRunsSchema at start",
+        "migration_level": null
+      },
+      "source": {
+        "commit": "39ef75af04655af2ffe671159e0f71516ed4e2a8",
+        "ref": null,
+        "repository": "https://github.com/IntentGate-app/intentgate-platform"
+      },
+      "status": "PROVISIONAL",
+      "status_evidence": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md §2: S1-WP-05-BEHAVIOURAL tag says NOT accepted; Wave 4 acceptance measured on 9334199, not this digest"
+    },
+    {
+      "accepted_anchor": {
+        "attribution": null,
+        "commit": "11cac3719664d0546eab0a80f78fdf0d92a9937b",
+        "evidence": "IntentGate-app/intentgate-lab@f6a5507:docs/WAVE-4-CEREMONY.md remote tag verification (gateway 11cac37 MATCH); S4-WP-37-AC-3-OWNER-PACK: no governed image of 11cac37 built yet",
+        "image_digest": null,
+        "kind": "tag",
+        "tag": "LKG-WAVE4-2026-09-24"
+      },
+      "attribution": null,
+      "attribution_source": "none: no IGBA/1 record exists for 3acd0c4",
+      "image": {
+        "digest": "sha256:e2ab4780b8bcedcf0ab915f1e7b93836f8df0238f3c371d5d96e97234fbf3c70",
+        "repository": "ghcr.io/intentgate-app/intentgate-gateway"
+      },
+      "image_digest_source": "IntentGate-app/intentgate-lab@f6a5507:docs/LAB-RECOVERY-SNAPSHOT-20260930T110032Z/snapshot.txt (repo digest of the running :main pull)",
+      "kind": "first-party",
+      "name": "gateway",
+      "provenance_attestation": null,
+      "role": "Go data-plane gateway (policy enforcement point)",
+      "runtime": {
+        "depends_on": [
+          "postgres",
+          "extractor",
+          "platform-gateway"
+        ],
+        "health": {
+          "kind": "http",
+          "path": "/healthz"
+        },
+        "port": 8080,
+        "publish": {
+          "bind_key": "GATEWAY_BIND",
+          "host_port": 8080
+        },
+        "replicas": 1,
+        "revision_source": {
+          "field": "revision",
+          "kind": "http-json",
+          "path": "/healthz",
+          "port": 8080
+        },
+        "service": "gateway"
+      },
+      "sbom": null,
+      "schema_owner": {
+        "ddl_mechanism": "idempotent DDL at start from embedded schema.sql; destructive DROP/re-ADD constraint pairs on every boot",
+        "migration_level": null
+      },
+      "source": {
+        "commit": "3acd0c4da3aa7ee44c06e52e639abeaff865274b",
+        "ref": "refs/heads/main",
+        "repository": "https://github.com/IntentGate-app/intentgate-gateway"
+      },
+      "status": "UNACCEPTED",
+      "status_evidence": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md §2: 3acd0c4 is the Lab primary pulled by the floating tag :main with no build record; the a2 shadow ce2ff488 (sha256:a9dd19a5..., SIGNING_UNAVAILABLE, NOT_ELIGIBLE) is barred by ruling N-3"
+    },
+    {
+      "accepted_anchor": {
+        "commit": "416efb1bd56046fd678fce7163bf84806c72d50c",
+        "evidence": "IntentGate-app/intentgate-console-pro@a6aff84:release-notes/lkg/AUTHORITATIVE-LAB-BASELINES.tsv",
+        "kind": "authoritative-baseline-ledger",
+        "tag": null
+      },
+      "attribution": {
+        "builder_run_id": "36673291777",
+        "eligibility": "ELIGIBLE",
+        "format": "IGBA/1",
+        "path": "evidence/console-pro/build-attribution.json",
+        "self_report": "STAMPED",
+        "sha256": "53f775a687c307187c331628f50e1544de46c63ffb2eb795c312b76f8733ff87",
+        "signing_state": "SIGNED",
+        "tree_state": "CLEAN"
+      },
+      "attribution_source": "IntentGate-app/intentgate-lab@f6a5507:docs/S1-WP-09-CONSOLE-DEPLOY-20260930T073154Z/deploy-run-36685118703/build-attribution.json (image run 36673291777)",
+      "image": {
+        "digest": "sha256:6e4f9bb6c0567c19c956831d2cf1517c936524c01d07303855b9f9d33c18908f",
+        "repository": "ghcr.io/intentgate-app/intentgate-console-pro"
+      },
+      "kind": "first-party",
+      "name": "console-pro",
+      "provenance_attestation": null,
+      "role": "operator console (UI/BFF, licence verifier)",
+      "runtime": {
+        "depends_on": [
+          "postgres",
+          "gateway",
+          "platform-gateway"
+        ],
+        "health": {
+          "kind": "none"
+        },
+        "port": 3000,
+        "publish": {
+          "bind_key": "CONSOLE_BIND",
+          "host_port": 3000
+        },
+        "replicas": 1,
+        "revision_source": {
+          "field": "commit",
+          "kind": "http-json",
+          "path": "/api/version",
+          "port": 3000
+        },
+        "service": "console-pro"
+      },
+      "sbom": null,
+      "schema_owner": {
+        "ddl_mechanism": "lazy idempotent CREATE ... IF NOT EXISTS on first DB use (lib/scim/db.ts and ~12 stores)",
+        "migration_level": null
+      },
+      "source": {
+        "commit": "416efb1bd56046fd678fce7163bf84806c72d50c",
+        "ref": "refs/heads/phase6b-distributed-enforcement-console",
+        "repository": "https://github.com/IntentGate-app/intentgate-console-pro"
+      },
+      "status": "ACCEPTED",
+      "status_evidence": "console-pro release-notes/lkg/AUTHORITATIVE-LAB-BASELINES.tsv @ a6aff84 (owner: AUTHORITATIVE_LAB=RECOVERED, 2026-09-30T11:58Z); the row itself records known visual regressions (Dashboard Version overflow, top-bar overflow)"
+    }
+  ],
+  "config_contract": {
+    "contract_version": "igcc/1",
+    "path": "release/config-contract.json",
+    "required_keys": [
+      "AUTH_OIDC_CLIENT_ID",
+      "AUTH_OIDC_CLIENT_SECRET",
+      "AUTH_OIDC_ISSUER",
+      "AUTH_ROLE_CLAIM",
+      "AUTH_ROLE_MAPPING",
+      "AUTH_SECRET",
+      "CONSOLE_PRO_PUBLIC_URL",
+      "INTENTGATE_ADMIN_TOKEN",
+      "INTENTGATE_DECEPTION_TOKEN",
+      "INTENTGATE_MASTER_KEY",
+      "INTENTGATE_PLATFORM_GATEWAY_TENANT",
+      "INTENTGATE_PLATFORM_GATEWAY_TOKEN",
+      "INTENTGATE_POSTGRES_URL",
+      "INTENTGATE_PUBLIC_GATEWAY_URL",
+      "INTENTGATE_TOTP_ENCRYPTION_KEY",
+      "INTENTGATE_WEBHOOK_SECRET",
+      "NEXTAUTH_URL",
+      "POSTGRES_PASSWORD",
+      "RECON_CRON_SECRET",
+      "RECON_INGEST_TOKEN"
+    ],
+    "sha256": "c05baecef6c686d337ed375e9501c5d38a07eecfe8553408e5f6ee6467abb2af"
+  },
+  "created_at": "2026-09-30T00:00:00Z",
+  "manifest_version": "igrm/1",
+  "open_owner_decisions": [
+    {
+      "evidence": "claude/LKG-PRODUCT-PROTECTION-MATRIX-2026-09-30.md §4",
+      "id": "D1",
+      "summary": "Product boundary: SDKs, Authority Portal (portal/, no repository) and extractor inclusion are not ruled"
+    },
+    {
+      "evidence": "claude/LKG-PRODUCT-PROTECTION-MATRIX-2026-09-30.md §4",
+      "id": "D3",
+      "summary": "Acceptance of platform and gateway baselines (no accepted anchor for the running platform 97178b8, worker 39ef75af, gateway 3acd0c4)"
+    },
+    {
+      "evidence": "claude/LKG-CLEAN-ROOM-RELEASE-ACCEPTANCE-2026-09-30.md §5",
+      "id": "D5",
+      "summary": "Clean-room identity: local test IdP fixture vs dedicated Entra test tenant"
+    },
+    {
+      "evidence": "claude/LKG-CLEAN-ROOM-RELEASE-ACCEPTANCE-2026-09-30.md §5",
+      "id": "D6",
+      "summary": "Distribution: offline image archives vs customer registry credential (GHCR images are private)"
+    }
+  ],
+  "product": "IntentGate",
+  "provenance": {
+    "generator": "release/release-manifest.py",
+    "generator_sha256": "6bea52752454b0633ed3449814cda30400db0512b6440fc46b0c8ab02fee0460",
+    "inputs": "../../../../../../../home/claude/w/install/release/inputs/intentgate-2026.09.30-rc0.inputs.json",
+    "inputs_sha256": "13d0aa3fd961b6824bc66c944b70c39ded365d420e2f5008a376b1dfc989413f"
+  },
+  "releasable": false,
+  "releasable_blockers": [
+    {
+      "code": "OPEN_OWNER_DECISION",
+      "component": "*",
+      "detail": "D1: Product boundary: SDKs, Authority Portal (portal/, no repository) and extractor inclusion are not ruled"
+    },
+    {
+      "code": "OPEN_OWNER_DECISION",
+      "component": "*",
+      "detail": "D3: Acceptance of platform and gateway baselines (no accepted anchor for the running platform 97178b8, worker 39ef75af, gateway 3acd0c4)"
+    },
+    {
+      "code": "OPEN_OWNER_DECISION",
+      "component": "*",
+      "detail": "D5: Clean-room identity: local test IdP fixture vs dedicated Entra test tenant"
+    },
+    {
+      "code": "OPEN_OWNER_DECISION",
+      "component": "*",
+      "detail": "D6: Distribution: offline image archives vs customer registry credential (GHCR images are private)"
+    },
+    {
+      "code": "SCHEMA_FINGERPRINT_UNMEASURED",
+      "component": "*",
+      "detail": "no clean-install schema fingerprint has been measured for this component set"
+    },
+    {
+      "code": "NO_MIGRATION_MANIFEST",
+      "component": "*",
+      "detail": "no versioned migration manifest from zero / from the previous accepted release"
+    },
+    {
+      "code": "THIRD_PARTY_DIGEST_UNVERIFIED",
+      "component": "postgres",
+      "detail": "digest was not verified to resolve in the upstream registry"
+    },
+    {
+      "code": "STATUS_UNACCEPTED",
+      "component": "extractor",
+      "detail": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md §2: extractor has only release tags; the Lab runs a box-local build intentgate-lab/extractor:dev (local image id sha256:5c50c4ac..., no revision label, no registry digest)"
+    },
+    {
+      "code": "SOURCE_COMMIT_UNKNOWN",
+      "component": "extractor",
+      "detail": "no source commit is attributable to the image"
+    },
+    {
+      "code": "NO_ACCEPTED_ANCHOR",
+      "component": "extractor",
+      "detail": "no accepted anchor recovered from evidence"
+    },
+    {
+      "code": "NO_IMAGE_DIGEST",
+      "component": "extractor",
+      "detail": "no image digest"
+    },
+    {
+      "code": "NO_ATTRIBUTION",
+      "component": "extractor",
+      "detail": "no IGBA/1 build attribution record"
+    },
+    {
+      "code": "NO_SBOM",
+      "component": "extractor",
+      "detail": "no SBOM bound to the digest"
+    },
+    {
+      "code": "NO_PROVENANCE_ATTESTATION",
+      "component": "extractor",
+      "detail": "no signed provenance attestation bound to the digest"
+    },
+    {
+      "code": "RUNTIME_REVISION_NOT_SELF_REPORTED",
+      "component": "extractor",
+      "detail": "the running service cannot report its own commit"
+    },
+    {
+      "code": "STATUS_PROVISIONAL",
+      "component": "platform-gateway",
+      "detail": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md §2: running 97178b8 = S1-WP-09-CLOSURE 4601ca9 + 12 untagged commits; does not contain 5 closed-by-tag packages on r1-governed-state"
+    },
+    {
+      "code": "ANCHOR_COMMIT_MISMATCH",
+      "component": "platform-gateway",
+      "detail": "anchor 4601ca96ff8a != component 97178b872ccc"
+    },
+    {
+      "code": "RUNTIME_REVISION_NOT_SELF_REPORTED",
+      "component": "platform-gateway",
+      "detail": "the running service cannot report its own commit"
+    },
+    {
+      "code": "MIGRATION_UNVERSIONED",
+      "component": "platform-gateway",
+      "detail": "idempotent DDL at start (bootstrap.ts); numbered SQL 0001-0005 have no runner; falls back to in-memory stores if schema-ensure fails"
+    },
+    {
+      "code": "STATUS_PROVISIONAL",
+      "component": "governance-worker",
+      "detail": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md §2: S1-WP-05-BEHAVIOURAL tag says NOT accepted; Wave 4 acceptance measured on 9334199, not this digest"
+    },
+    {
+      "code": "ANCHOR_COMMIT_MISMATCH",
+      "component": "governance-worker",
+      "detail": "anchor 9334199df16d != component 39ef75af0465"
+    },
+    {
+      "code": "NO_ATTRIBUTION",
+      "component": "governance-worker",
+      "detail": "no IGBA/1 build attribution record"
+    },
+    {
+      "code": "NO_SBOM",
+      "component": "governance-worker",
+      "detail": "no SBOM bound to the digest"
+    },
+    {
+      "code": "NO_PROVENANCE_ATTESTATION",
+      "component": "governance-worker",
+      "detail": "no signed provenance attestation bound to the digest"
+    },
+    {
+      "code": "MIGRATION_UNVERSIONED",
+      "component": "governance-worker",
+      "detail": "idempotent ensureGovernanceRunsSchema at start"
+    },
+    {
+      "code": "STATUS_UNACCEPTED",
+      "component": "gateway",
+      "detail": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md §2: 3acd0c4 is the Lab primary pulled by the floating tag :main with no build record; the a2 shadow ce2ff488 (sha256:a9dd19a5..., SIGNING_UNAVAILABLE, NOT_ELIGIBLE) is barred by ruling N-3"
+    },
+    {
+      "code": "ANCHOR_COMMIT_MISMATCH",
+      "component": "gateway",
+      "detail": "anchor 11cac3719664 != component 3acd0c4da3aa"
+    },
+    {
+      "code": "NO_ATTRIBUTION",
+      "component": "gateway",
+      "detail": "no IGBA/1 build attribution record"
+    },
+    {
+      "code": "NO_SBOM",
+      "component": "gateway",
+      "detail": "no SBOM bound to the digest"
+    },
+    {
+      "code": "NO_PROVENANCE_ATTESTATION",
+      "component": "gateway",
+      "detail": "no signed provenance attestation bound to the digest"
+    },
+    {
+      "code": "MIGRATION_UNVERSIONED",
+      "component": "gateway",
+      "detail": "idempotent DDL at start from embedded schema.sql; destructive DROP/re-ADD constraint pairs on every boot"
+    },
+    {
+      "code": "ANCHOR_NOT_TAGGED",
+      "component": "console-pro",
+      "detail": "anchor authoritative-baseline-ledger 416efb1bd560 has no immutable tag"
+    },
+    {
+      "code": "NO_SBOM",
+      "component": "console-pro",
+      "detail": "no SBOM bound to the digest"
+    },
+    {
+      "code": "NO_PROVENANCE_ATTESTATION",
+      "component": "console-pro",
+      "detail": "no signed provenance attestation bound to the digest"
+    },
+    {
+      "code": "MIGRATION_UNVERSIONED",
+      "component": "console-pro",
+      "detail": "lazy idempotent CREATE ... IF NOT EXISTS on first DB use (lib/scim/db.ts and ~12 stores)"
+    }
+  ],
+  "release_id": "intentgate-2026.09.30-rc0",
+  "schema": {
+    "database": "intentgate",
+    "expected_fingerprint": null,
+    "expected_fingerprint_evidence": null,
+    "fingerprint_algorithm": "lkg-lab-state/1 DB_SCHEMA: pg_dump --schema-only | drop lines starting '--', 'SET ', 'SELECT pg_catalog.set_config', '\\restrict'/'\\unrestrict', blank | sha256 | first 32 hex",
+    "lab_observed_reference": {
+      "evidence": "IntentGate-app/intentgate-lab@f6a5507:docs/LKG-ROLLBACK-VERIFICATION-2026-09-30/restored-state-capture-1.txt",
+      "fingerprint": "5ea2e7eba5d6a3c13b9d21cca07ff14f",
+      "note": "SUPPORTING ONLY. The Lab database carries Lab-only tables and history; a clean install is not expected to equal it and this value is never used as the expected fingerprint."
+    },
+    "migration_manifest": null,
+    "owners": [
+      {
+        "component": "console-pro",
+        "ddl_mechanism": "lazy idempotent CREATE ... IF NOT EXISTS on first DB use (lib/scim/db.ts and ~12 stores)",
+        "migration_level": null
+      },
+      {
+        "component": "platform-gateway",
+        "ddl_mechanism": "idempotent DDL at start (bootstrap.ts); numbered SQL 0001-0005 have no runner; falls back to in-memory stores if schema-ensure fails",
+        "migration_level": null
+      },
+      {
+        "component": "governance-worker",
+        "ddl_mechanism": "idempotent ensureGovernanceRunsSchema at start",
+        "migration_level": null
+      },
+      {
+        "component": "gateway",
+        "ddl_mechanism": "idempotent DDL at start from embedded schema.sql; destructive DROP/re-ADD constraint pairs on every boot",
+        "migration_level": null
+      }
+    ]
+  }
+}
