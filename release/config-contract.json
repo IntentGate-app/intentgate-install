@@ -1,0 +1,1133 @@
+{
+  "contract_version": "igcc/1",
+  "product": "IntentGate",
+  "derived_from": [
+    "Lab .env key NAMES: IntentGate-app/intentgate-lab@f6a5507:docs/LAB-RECOVERY-SNAPSHOT-20260930T110032Z/snapshot.txt ('== .env key names only', 27 keys)",
+    "Lab wiring: intentgate-lab@f6a5507 compose.yml (gateway, console-pro, extractor, postgres), compose.platform.yml, compose.governance-worker.yml",
+    "intentgate-install@3ced9e6 .env.example (12 keys)",
+    "component config readers: console-pro@416efb1 lib/totp/encryption.ts, lib/rbac.ts; gateway@3acd0c4 internal/capability/codec.go; platform@97178b8 apps/governance-worker/src/worker.ts"
+  ],
+  "lab_key_names": [
+    "AUTH_OIDC_CLIENT_ID",
+    "AUTH_OIDC_CLIENT_SECRET",
+    "AUTH_OIDC_ISSUER",
+    "AUTH_OIDC_SCOPES",
+    "AUTH_PROVIDER",
+    "AUTH_ROLE_CLAIM",
+    "AUTH_ROLE_MAPPING",
+    "AUTH_SECRET",
+    "CONSOLE_PRO_PUBLIC_URL",
+    "HOLDER_PASSWORD",
+    "INTENTGATE_ADMIN_TOKEN",
+    "INTENTGATE_DECEPTION_TOKEN",
+    "INTENTGATE_ENTRA_CLIENT_ID",
+    "INTENTGATE_ENTRA_CLIENT_SECRET",
+    "INTENTGATE_ENTRA_TENANT_ID",
+    "INTENTGATE_MASTER_KEY",
+    "INTENTGATE_PLATFORM_GATEWAY_TOKEN",
+    "INTENTGATE_POSTGRES_URL",
+    "INTENTGATE_PUBLIC_GATEWAY_URL",
+    "INTENTGATE_TOTP_ENCRYPTION_KEY",
+    "INTENTGATE_WEBHOOK_SECRET",
+    "LAB_ADMIN_PASSWORD",
+    "LAB_ADMIN_USERNAME",
+    "LAB_HOSTNAME",
+    "NEXTAUTH_URL",
+    "RECON_CRON_SECRET",
+    "RECON_INGEST_TOKEN"
+  ],
+  "forbidden_keys": [
+    {
+      "name": "INTENTGATE_ALLOW_MOCK_AUTH",
+      "reason": "opt-out from console-pro's refusal to run mock auth in production (lab compose.yml, ODR-R1-002)"
+    },
+    {
+      "name": "IMAGE_TAG",
+      "reason": "mutable image tag selection; images come only from the signed manifest by digest"
+    },
+    {
+      "name": "CONSOLE_IMAGE_TAG",
+      "reason": "mutable image tag selection; images come only from the signed manifest by digest"
+    },
+    {
+      "name": "INTENTGATE_VERSION",
+      "reason": "mutable image tag selection; images come only from the signed manifest by digest"
+    }
+  ],
+  "excluded_lab_only": [
+    {
+      "name": "LAB_ADMIN_USERNAME",
+      "reason": "Lab prospect-access credential store (Caddy forward_auth); not a product surface"
+    },
+    {
+      "name": "LAB_ADMIN_PASSWORD",
+      "reason": "Lab prospect-access credential store seed; not a product surface"
+    },
+    {
+      "name": "LAB_HOSTNAME",
+      "reason": "Lab edge (Caddy) host name"
+    },
+    {
+      "name": "HOLDER_PASSWORD",
+      "reason": "Lab operator fixture credential"
+    }
+  ],
+  "excluded_lab_wiring": [
+    {
+      "component": "gateway",
+      "names": [
+        "INTENTGATE_LAB_MODE",
+        "INTENTGATE_TENANT_ADMINS",
+        "INTENTGATE_PAYLOAD_CAPTURE_ENABLED",
+        "INTENTGATE_PAYLOAD_CAPTURE_TOOLS",
+        "INTENTGATE_PAYLOAD_CAPTURE_TTL",
+        "INTENTGATE_OUTPUT_SCHEMAS_PATH",
+        "INTENTGATE_OUTPUT_SCHEMA_DEFAULT_ACTION",
+        "INTENTGATE_TENANT_SCOPED_TOOLS",
+        "INTENTGATE_TENANT_SCOPE_DEFAULT_ACTION",
+        "INTENTGATE_REFVERIFY_ENABLED",
+        "INTENTGATE_REFVERIFY_CONFIG_PATH",
+        "INTENTGATE_REFVERIFY_MIN_CENTS",
+        "INTENTGATE_REFVERIFY_FAIL_CLOSED",
+        "INTENTGATE_DECEPTION_CONFIG_PATH",
+        "INTENTGATE_EASTWEST_ENABLED",
+        "INTENTGATE_EASTWEST_CONFIG",
+        "INTENTGATE_TOOL_SCOPE_ENABLED",
+        "INTENTGATE_TOOL_SCOPE_CONFIG",
+        "INTENTGATE_SIEM_*",
+        "AWS_*"
+      ],
+      "reason": "Lab-only mode, a published demo tenant token (acme:acme-demo-token), payload capture on by default, the Lab's SIEM sinks, and features whose configuration is a Lab-mounted file (output-schemas.json, vendors.json, deception-decoys.json, microseg/*.json) that is not part of any release bundle. PRODUCT GAP: these features are OFF in the canonical install until their configuration is part of the contract."
+    },
+    {
+      "component": "console-pro",
+      "names": [
+        "INTENTGATE_LAB_MODE",
+        "INTENTGATE_DECEPTION_ALLOW_SELF_APPROVE",
+        "LAB_CREDENTIALS_DATABASE_URL",
+        "LAB_ADMIN_USERNAME",
+        "LAB_ADMIN_PASSWORD",
+        "SPLUNK_PASSWORD"
+      ],
+      "reason": "Lab-only demo/prospect features and the Lab Splunk integration."
+    }
+  ],
+  "keys": [
+    {
+      "name": "POSTGRES_PASSWORD",
+      "required": true,
+      "secret": true,
+      "generator": "random-hex-32",
+      "validator": {
+        "kind": "min-length",
+        "min": 32
+      },
+      "default": null,
+      "forbidden_values": [
+        "intentgate",
+        "postgres",
+        "password"
+      ],
+      "scope": "product",
+      "description": "Password of the bundled postgres 'intentgate' role."
+    },
+    {
+      "name": "INTENTGATE_POSTGRES_URL",
+      "required": true,
+      "secret": true,
+      "generator": "derive:postgres://intentgate:${POSTGRES_PASSWORD}@postgres:5432/intentgate?sslmode=disable",
+      "validator": {
+        "kind": "regex",
+        "pattern": "^postgres(ql)?://[^\\s]+$"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Single shared product database; consumed by gateway, platform-gateway, governance-worker and console-pro (SCIM_DATABASE_URL)."
+    },
+    {
+      "name": "INTENTGATE_MASTER_KEY",
+      "required": true,
+      "secret": true,
+      "generator": "random-base64url-32",
+      "validator": {
+        "kind": "base64-bytes",
+        "min_bytes": 16
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Gateway capability-token master key (capability.MasterKeyFromBase64: >=16 bytes)."
+    },
+    {
+      "name": "INTENTGATE_ADMIN_TOKEN",
+      "required": true,
+      "secret": true,
+      "generator": "random-hex-32",
+      "validator": {
+        "kind": "min-length",
+        "min": 32
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Gateway superadmin token for /v1/admin/*; also used by console-pro."
+    },
+    {
+      "name": "AUTH_SECRET",
+      "required": true,
+      "secret": true,
+      "generator": "random-base64url-32",
+      "validator": {
+        "kind": "min-length",
+        "min": 32
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Console session secret (NextAuth)."
+    },
+    {
+      "name": "INTENTGATE_PLATFORM_GATEWAY_TOKEN",
+      "required": true,
+      "secret": true,
+      "generator": "random-hex-32",
+      "validator": {
+        "kind": "min-length",
+        "min": 32
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Platform gateway authenticator token presented by console-pro and the Go gateway."
+    },
+    {
+      "name": "INTENTGATE_TOTP_ENCRYPTION_KEY",
+      "required": true,
+      "secret": true,
+      "generator": "random-base64url-32",
+      "validator": {
+        "kind": "base64-bytes",
+        "min_bytes": 32,
+        "max_bytes": 32
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "At-rest encryption key for TOTP and pull-source credentials (lib/totp/encryption.ts: exactly 32 bytes). EST-F-304: no published default."
+    },
+    {
+      "name": "INTENTGATE_WEBHOOK_SECRET",
+      "required": true,
+      "secret": true,
+      "generator": "random-hex-32",
+      "validator": {
+        "kind": "min-length",
+        "min": 32
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Gateway hold-webhook signing secret; console-pro INTENTGATE_WEBHOOK_RECEIVE_SECRET."
+    },
+    {
+      "name": "INTENTGATE_DECEPTION_TOKEN",
+      "required": true,
+      "secret": true,
+      "generator": "random-hex-32",
+      "validator": {
+        "kind": "min-length",
+        "min": 32
+      },
+      "default": null,
+      "forbidden_values": [
+        "lab-deception-token"
+      ],
+      "scope": "product",
+      "description": "Authenticates gateway deception trip reports and decoy pulls to console-pro. The Lab compose default 'lab-deception-token' is a published default and is forbidden."
+    },
+    {
+      "name": "RECON_CRON_SECRET",
+      "required": true,
+      "secret": true,
+      "generator": "random-hex-32",
+      "validator": {
+        "kind": "min-length",
+        "min": 32
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Bearer for /api/cron/reconcile."
+    },
+    {
+      "name": "RECON_INGEST_TOKEN",
+      "required": true,
+      "secret": true,
+      "generator": "random-hex-32",
+      "validator": {
+        "kind": "min-length",
+        "min": 32
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Bearer for /api/reconcile/provisioned."
+    },
+    {
+      "name": "AUTH_OIDC_ISSUER",
+      "required": true,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "regex",
+        "pattern": "^https://[^\\s]+$"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "OIDC issuer (Entra). ODR-R1-020: operators authenticate against OIDC; mock is not a product mode."
+    },
+    {
+      "name": "AUTH_OIDC_CLIENT_ID",
+      "required": true,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "nonempty"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "OIDC client id."
+    },
+    {
+      "name": "AUTH_OIDC_CLIENT_SECRET",
+      "required": true,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "nonempty"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "OIDC client secret."
+    },
+    {
+      "name": "AUTH_ROLE_CLAIM",
+      "required": true,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "nonempty"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "IdP claim carrying console roles (R-2 / EST-F-304)."
+    },
+    {
+      "name": "AUTH_ROLE_MAPPING",
+      "required": true,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "regex",
+        "pattern": "^[^:,\\s]+:[A-Za-z_]+(,[^:,\\s]+:[A-Za-z_]+)*$"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "'<idp-group>:<role>,...' (lib/rbac.ts)."
+    },
+    {
+      "name": "CONSOLE_PRO_PUBLIC_URL",
+      "required": true,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "regex",
+        "pattern": "^https?://[^\\s]+$"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Public console URL; drives NEXTAUTH_URL and INTENTGATE_CONSOLE_URL."
+    },
+    {
+      "name": "INTENTGATE_PUBLIC_GATEWAY_URL",
+      "required": true,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "regex",
+        "pattern": "^https?://[^\\s]+$"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Externally reachable MCP endpoint shown to operators."
+    },
+    {
+      "name": "INTENTGATE_PLATFORM_GATEWAY_TENANT",
+      "required": true,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "regex",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Tenant the platform gateway authenticator binds; also INTENTGATE_DISCOVERY_TENANT on the Go gateway (must match)."
+    },
+    {
+      "name": "NEXTAUTH_URL",
+      "required": true,
+      "secret": false,
+      "generator": "derive:${CONSOLE_PRO_PUBLIC_URL}",
+      "validator": {
+        "kind": "regex",
+        "pattern": "^https?://[^\\s]+$"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "NextAuth callback base; equals CONSOLE_PRO_PUBLIC_URL."
+    },
+    {
+      "name": "AUTH_PROVIDER",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "enum",
+        "values": [
+          "oidc"
+        ]
+      },
+      "default": "oidc",
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Only 'oidc' is a product value; the rendered stacks hard-wire oidc and this key exists only so a stray 'mock' is refused."
+    },
+    {
+      "name": "AUTH_OIDC_SCOPES",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "nonempty"
+      },
+      "default": "openid profile email",
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Entra v2.0: 'groups' is a claim, not a scope."
+    },
+    {
+      "name": "INTENTGATE_PLATFORM_GATEWAY_DOMAINS",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "nonempty"
+      },
+      "default": "WORKFORCE",
+      "forbidden_values": [],
+      "scope": "product",
+      "description": ""
+    },
+    {
+      "name": "INTENTGATE_PLATFORM_GATEWAY_SCOPES",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "nonempty"
+      },
+      "default": "runtime:ingest,coverage:reconcile",
+      "forbidden_values": [],
+      "scope": "product",
+      "description": ""
+    },
+    {
+      "name": "EXTRACTOR_STUB",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "enum",
+        "values": [
+          "true",
+          "false"
+        ]
+      },
+      "default": "true",
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "true = offline heuristic, no Anthropic key required."
+    },
+    {
+      "name": "CONSOLE_BIND",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "regex",
+        "pattern": "^[0-9.]+$"
+      },
+      "default": "127.0.0.1",
+      "forbidden_values": [],
+      "scope": "compose",
+      "description": "Host interface for the console port. Default loopback: put a TLS reverse proxy in front."
+    },
+    {
+      "name": "GATEWAY_BIND",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "regex",
+        "pattern": "^[0-9.]+$"
+      },
+      "default": "127.0.0.1",
+      "forbidden_values": [],
+      "scope": "compose",
+      "description": "Host interface for the gateway port."
+    },
+    {
+      "name": "INTENTGATE_UPSTREAM_URL",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Tool/MCP server the gateway forwards ALLOWED calls to."
+    },
+    {
+      "name": "INTENTGATE_DECLARED_SERVER_ID",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "S2-WP-16 declared MCP server id. Empty disables declaration capture (product default)."
+    },
+    {
+      "name": "INTENTGATE_PLATFORM_GATEWAY_SUBJECT",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Presented actor override for governed operator acts."
+    },
+    {
+      "name": "INTENTGATE_ENTRA_TENANT_ID",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Entra Graph collector (Registration B)."
+    },
+    {
+      "name": "INTENTGATE_ENTRA_CLIENT_ID",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Entra Graph collector (Registration B)."
+    },
+    {
+      "name": "INTENTGATE_ENTRA_CLIENT_SECRET",
+      "required": false,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Entra Graph collector (Registration B)."
+    },
+    {
+      "name": "GATEWAY_GITHUB_WEBHOOK_SECRET",
+      "required": false,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Platform GitHub collector webhook."
+    },
+    {
+      "name": "GATEWAY_DISCOVERY_CSRF_SECRET",
+      "required": false,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Platform discovery CSRF secret."
+    },
+    {
+      "name": "GITHUB_APP_ID",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Platform GitHub collector."
+    },
+    {
+      "name": "GITHUB_API_URL",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Platform GitHub collector."
+    },
+    {
+      "name": "INTENTGATE_LICENSE_KEY",
+      "required": false,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Ed25519 licence (enables Pro features)."
+    },
+    {
+      "name": "INTENTGATE_ANTHROPIC_API_KEY",
+      "required": false,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Console authoring assistant."
+    },
+    {
+      "name": "ANTHROPIC_API_KEY",
+      "required": false,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Extractor live mode (EXTRACTOR_STUB=false)."
+    },
+    {
+      "name": "INTENTGATE_OWNER_EMAIL_DOMAINS",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Restrict agent-owner emails."
+    },
+    {
+      "name": "INTENTGATE_REPORTS_API_TOKEN",
+      "required": false,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Enables GET /api/reports/<type>."
+    },
+    {
+      "name": "INTENTGATE_DISCOVERY_SYNC_TOKEN",
+      "required": false,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Enables POST /api/discovery/sync scheduler."
+    },
+    {
+      "name": "INTENTGATE_POLICY_REQUEST_WEBHOOK_URL",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Custom-policy request intake."
+    },
+    {
+      "name": "INTENTGATE_APPROVER_ROUTES",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "tool -> approver group routing."
+    },
+    {
+      "name": "INTENTGATE_SMTP_HOST",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Email channel."
+    },
+    {
+      "name": "INTENTGATE_SMTP_PORT",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Email channel (component default 587)."
+    },
+    {
+      "name": "INTENTGATE_SMTP_SECURE",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Email channel."
+    },
+    {
+      "name": "INTENTGATE_SMTP_USER",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Email channel."
+    },
+    {
+      "name": "INTENTGATE_SMTP_PASS",
+      "required": false,
+      "secret": true,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Email channel."
+    },
+    {
+      "name": "INTENTGATE_SMTP_FROM",
+      "required": false,
+      "secret": false,
+      "generator": null,
+      "validator": {
+        "kind": "any"
+      },
+      "default": null,
+      "forbidden_values": [],
+      "scope": "product",
+      "description": "Email channel."
+    }
+  ],
+  "wiring": {
+    "postgres": {
+      "POSTGRES_USER": {
+        "literal": "intentgate"
+      },
+      "PGDATA": {
+        "literal": "/var/lib/postgresql/data/pgdata"
+      },
+      "POSTGRES_DB": {
+        "literal": "intentgate"
+      },
+      "POSTGRES_PASSWORD": {
+        "key": "POSTGRES_PASSWORD"
+      }
+    },
+    "extractor": {
+      "EXTRACTOR_STUB": {
+        "key": "EXTRACTOR_STUB"
+      },
+      "LOG_LEVEL": {
+        "literal": "INFO"
+      },
+      "ANTHROPIC_API_KEY": {
+        "key": "ANTHROPIC_API_KEY"
+      }
+    },
+    "platform-gateway": {
+      "GATEWAY_DEV_TOKEN": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_TOKEN"
+      },
+      "GATEWAY_DEV_TENANT": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_TENANT"
+      },
+      "GATEWAY_DEV_DOMAINS": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_DOMAINS"
+      },
+      "GATEWAY_DEV_SCOPES": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_SCOPES"
+      },
+      "GATEWAY_DEV_SUBJECT": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_SUBJECT"
+      },
+      "PORT": {
+        "literal": "4000"
+      },
+      "NODE_ENV": {
+        "literal": "production"
+      },
+      "INTENTGATE_COMPOSE_MODE": {
+        "literal": "canonical"
+      },
+      "DISCOVERY_DATABASE_URL": {
+        "key": "INTENTGATE_POSTGRES_URL"
+      },
+      "INTENTGATE_ENTRA_TENANT_ID": {
+        "key": "INTENTGATE_ENTRA_TENANT_ID"
+      },
+      "INTENTGATE_ENTRA_CLIENT_ID": {
+        "key": "INTENTGATE_ENTRA_CLIENT_ID"
+      },
+      "INTENTGATE_ENTRA_CLIENT_SECRET": {
+        "key": "INTENTGATE_ENTRA_CLIENT_SECRET"
+      },
+      "GATEWAY_GITHUB_WEBHOOK_SECRET": {
+        "key": "GATEWAY_GITHUB_WEBHOOK_SECRET"
+      },
+      "GATEWAY_DISCOVERY_CSRF_SECRET": {
+        "key": "GATEWAY_DISCOVERY_CSRF_SECRET"
+      },
+      "GITHUB_APP_ID": {
+        "key": "GITHUB_APP_ID"
+      },
+      "GITHUB_API_URL": {
+        "key": "GITHUB_API_URL"
+      }
+    },
+    "governance-worker": {
+      "GOVERNANCE_DATABASE_URL": {
+        "key": "INTENTGATE_POSTGRES_URL"
+      },
+      "WORKER_INTERVAL_MS": {
+        "literal": "1000"
+      },
+      "WORKER_LEASE_SECONDS": {
+        "literal": "30"
+      },
+      "WORKER_CLAIM_LIMIT": {
+        "literal": "10"
+      },
+      "PORT": {
+        "literal": "4100"
+      }
+    },
+    "gateway": {
+      "INTENTGATE_ADDR": {
+        "literal": ":8080"
+      },
+      "INTENTGATE_MASTER_KEY": {
+        "key": "INTENTGATE_MASTER_KEY"
+      },
+      "INTENTGATE_ADMIN_TOKEN": {
+        "key": "INTENTGATE_ADMIN_TOKEN"
+      },
+      "INTENTGATE_REQUIRE_CAPABILITY": {
+        "literal": "true"
+      },
+      "INTENTGATE_REQUIRE_INTENT": {
+        "literal": "true"
+      },
+      "INTENTGATE_REQUIRE_BUDGET": {
+        "literal": "true"
+      },
+      "INTENTGATE_EXTRACTOR_URL": {
+        "literal": "http://extractor:8090"
+      },
+      "INTENTGATE_UPSTREAM_URL": {
+        "key": "INTENTGATE_UPSTREAM_URL"
+      },
+      "INTENTGATE_POSTGRES_URL": {
+        "key": "INTENTGATE_POSTGRES_URL"
+      },
+      "INTENTGATE_POLICY_STORE": {
+        "literal": "postgres"
+      },
+      "INTENTGATE_APPROVALS_BACKEND": {
+        "literal": "postgres"
+      },
+      "INTENTGATE_AUDIT_PERSIST": {
+        "literal": "true"
+      },
+      "INTENTGATE_AUDIT_TARGET": {
+        "literal": "stdout"
+      },
+      "INTENTGRANT_CONTROL_URL": {
+        "literal": "http://console-pro:3000"
+      },
+      "INTENTGATE_NODE_ID": {
+        "literal": "gateway-1"
+      },
+      "INTENTGATE_TASK_BINDING": {
+        "literal": "true"
+      },
+      "INTENTGATE_PII_FILTER_ENABLED": {
+        "literal": "true"
+      },
+      "INTENTGATE_PII_DEFAULT_ACTION": {
+        "literal": "redact"
+      },
+      "INTENTGATE_APPROVAL_TIMEOUT_S": {
+        "literal": "300"
+      },
+      "INTENTGATE_WEBHOOK_URL": {
+        "literal": "http://console-pro:3000/api/webhook/intentgate"
+      },
+      "INTENTGATE_WEBHOOK_SECRET": {
+        "key": "INTENTGATE_WEBHOOK_SECRET"
+      },
+      "INTENTGATE_PROVENANCE_ENABLED": {
+        "literal": "true"
+      },
+      "INTENTGATE_FAULT_ISOLATION_ENABLED": {
+        "literal": "true"
+      },
+      "INTENTGATE_FAULT_ISOLATION_MAX_CONCURRENT_PER_TOOL": {
+        "literal": "20"
+      },
+      "INTENTGATE_FAULT_ISOLATION_FAILURE_THRESHOLD": {
+        "literal": "5"
+      },
+      "INTENTGATE_FAULT_ISOLATION_COOLDOWN_MS": {
+        "literal": "30000"
+      },
+      "INTENTGATE_DECEPTION_TOKEN": {
+        "key": "INTENTGATE_DECEPTION_TOKEN"
+      },
+      "INTENTGATE_DECEPTION_TRIP_URL": {
+        "literal": "http://console-pro:3000/api/deception/trip"
+      },
+      "INTENTGATE_DECEPTION_SYNC_URL": {
+        "literal": "http://console-pro:3000/api/deception/decoys"
+      },
+      "INTENTGATE_DECEPTION_SYNC_INTERVAL_S": {
+        "literal": "15"
+      },
+      "INTENTGATE_METRICS_ENABLED": {
+        "literal": "true"
+      },
+      "INTENTGATE_COMPOSE_MODE": {
+        "literal": "canonical"
+      },
+      "INTENTGATE_DISCOVERY_AUTHORIZE_URL": {
+        "literal": "http://platform-gateway:4000/api/v1/discovery/authorize/mcp"
+      },
+      "INTENTGATE_DISCOVERY_AUTHORIZE_TOKEN": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_TOKEN"
+      },
+      "INTENTGATE_DISCOVERY_OBSERVATIONS_URL": {
+        "literal": "http://platform-gateway:4000/api/v1/discovery/observations"
+      },
+      "INTENTGATE_DISCOVERY_OBSERVATIONS_TOKEN": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_TOKEN"
+      },
+      "INTENTGATE_DISCOVERY_TENANT": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_TENANT"
+      },
+      "INTENTGATE_DISCOVERY_DECLARED_SERVER_ID": {
+        "key": "INTENTGATE_DECLARED_SERVER_ID"
+      },
+      "INTENTGATE_DISCOVERY_EXECUTION_OUTCOMES_URL": {
+        "literal": "http://platform-gateway:4000/api/v1/discovery/execution-outcomes"
+      },
+      "INTENTGATE_DISCOVERY_EXECUTION_OUTCOMES_TOKEN": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_TOKEN"
+      }
+    },
+    "console-pro": {
+      "INTENTGATE_GATEWAY_URL": {
+        "literal": "http://gateway:8080"
+      },
+      "INTENTGATE_PLATFORM_GATEWAY_URL": {
+        "literal": "http://platform-gateway:4000"
+      },
+      "INTENTGATE_PLATFORM_GATEWAY_TOKEN": {
+        "key": "INTENTGATE_PLATFORM_GATEWAY_TOKEN"
+      },
+      "INTENTGATE_WEBHOOK_RECEIVE_SECRET": {
+        "key": "INTENTGATE_WEBHOOK_SECRET"
+      },
+      "INTENTGATE_DECEPTION_TOKEN": {
+        "key": "INTENTGATE_DECEPTION_TOKEN"
+      },
+      "INTENTGATE_CONSOLE_URL": {
+        "key": "CONSOLE_PRO_PUBLIC_URL"
+      },
+      "INTENTGATE_SMTP_HOST": {
+        "key": "INTENTGATE_SMTP_HOST"
+      },
+      "INTENTGATE_SMTP_PORT": {
+        "key": "INTENTGATE_SMTP_PORT"
+      },
+      "INTENTGATE_SMTP_SECURE": {
+        "key": "INTENTGATE_SMTP_SECURE"
+      },
+      "INTENTGATE_SMTP_USER": {
+        "key": "INTENTGATE_SMTP_USER"
+      },
+      "INTENTGATE_SMTP_PASS": {
+        "key": "INTENTGATE_SMTP_PASS"
+      },
+      "INTENTGATE_SMTP_FROM": {
+        "key": "INTENTGATE_SMTP_FROM"
+      },
+      "INTENTGATE_APPROVER_ROUTES": {
+        "key": "INTENTGATE_APPROVER_ROUTES"
+      },
+      "INTENTGATE_PUBLIC_GATEWAY_URL": {
+        "key": "INTENTGATE_PUBLIC_GATEWAY_URL"
+      },
+      "INTENTGATE_ADMIN_TOKEN": {
+        "key": "INTENTGATE_ADMIN_TOKEN"
+      },
+      "INTENTGATE_LICENSE_KEY": {
+        "key": "INTENTGATE_LICENSE_KEY"
+      },
+      "INTENTGATE_ANTHROPIC_API_KEY": {
+        "key": "INTENTGATE_ANTHROPIC_API_KEY"
+      },
+      "AUTH_PROVIDER": {
+        "literal": "oidc"
+      },
+      "AUTH_OIDC_ISSUER": {
+        "key": "AUTH_OIDC_ISSUER"
+      },
+      "AUTH_OIDC_CLIENT_ID": {
+        "key": "AUTH_OIDC_CLIENT_ID"
+      },
+      "AUTH_OIDC_CLIENT_SECRET": {
+        "key": "AUTH_OIDC_CLIENT_SECRET"
+      },
+      "AUTH_OIDC_SCOPES": {
+        "key": "AUTH_OIDC_SCOPES"
+      },
+      "AUTH_SECRET": {
+        "key": "AUTH_SECRET"
+      },
+      "SCIM_DATABASE_URL": {
+        "key": "INTENTGATE_POSTGRES_URL"
+      },
+      "INTENTGATE_POLICY_REQUEST_WEBHOOK_URL": {
+        "key": "INTENTGATE_POLICY_REQUEST_WEBHOOK_URL"
+      },
+      "INTENTGATE_OWNER_EMAIL_DOMAINS": {
+        "key": "INTENTGATE_OWNER_EMAIL_DOMAINS"
+      },
+      "INTENTGATE_REPORTS_API_TOKEN": {
+        "key": "INTENTGATE_REPORTS_API_TOKEN"
+      },
+      "INTENTGATE_TOTP_ENCRYPTION_KEY": {
+        "key": "INTENTGATE_TOTP_ENCRYPTION_KEY"
+      },
+      "AUTH_ROLE_CLAIM": {
+        "key": "AUTH_ROLE_CLAIM"
+      },
+      "AUTH_ROLE_MAPPING": {
+        "key": "AUTH_ROLE_MAPPING"
+      },
+      "INTENTGATE_DISCOVERY_SYNC_TOKEN": {
+        "key": "INTENTGATE_DISCOVERY_SYNC_TOKEN"
+      },
+      "RECON_CRON_SECRET": {
+        "key": "RECON_CRON_SECRET"
+      },
+      "RECON_INGEST_TOKEN": {
+        "key": "RECON_INGEST_TOKEN"
+      },
+      "NEXTAUTH_URL": {
+        "key": "NEXTAUTH_URL"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "record_version": "IGRS/1",
+  "logical_key_id": "intentgate-release-2026-01",
+  "kms_key_arn": "arn:aws:kms:eu-central-1:357860137776:key/523d997c-4ea2-4ffa-afba-edfd04eec883",
+  "spki_sha256": "4efafcb1a932277c6ed355d98034120c699ad0f37c82cd02c90b71b3ad85ba77",
+  "algorithm": "ECDSA_P256_SHA256",
+  "kms_signing_algorithm": "ECDSA_SHA_256",
+  "key_spec": "ECC_NIST_P256",
+  "key_usage": "SIGN_VERIFY",
+  "pae_sha256": "7e77be5b046d66c86a6c60e7e31cce565f7f8d1b168733fd61e66a797bee9360",
+  "signature_bytes": 72,
+  "alias_is_not_authoritative": "an alias is mutable and is deliberately not recorded here as an identity; the ARN and the fingerprint are",
+  "key_material_custody": "AWS KMS. It has never left, and this tool cannot accept one."
+}

@@ -1,0 +1,158 @@
+name: Release bundle
+
+# Builds THE release bundle from tracked release inputs, signs the canonical manifest with the KMS
+# release key (cosign sign-blob, detached), and hands the bundle, by sha256, to the clean-room
+# acceptance workflow. Publishing is gated on: the manifest's computed `releasable` flag AND a GREEN
+# clean-room run. Neither can be overridden from here.
+#
+# OWNER PREREQUISITES (not satisfiable by engineering; see the design doc):
+#   - IAM: IntentGateCiReleaseSigning must trust this repository's OIDC subject (today it trusts the
+#     platform repository only), or a dedicated manifest-signing role must exist.
+#   - secrets.HELM_REPO_READ_TOKEN / ACCEPTANCE_KIT_READ_TOKEN: read access to intentgate-helm / intentgate-lab.
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: "Committed manifest to release, e.g. release/manifests/intentgate-2026.09.30-rc0.release-manifest.json"
+        required: true
+      candidate:
+        description: "Clean-room may install a NOT-releasable candidate for measurement (never publishes)"
+        type: boolean
+        default: true
+      previous_bundle_run_id:
+        description: "Run id of the previous ACCEPTED release bundle (upgrade/rollback). Empty = none exists."
+        required: false
+        default: ""
+      previous_bundle_sha256:
+        description: "sha256 of that previous bundle archive"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  TOOL: release/release-manifest.py
+  KMS_KEY_ARN: arn:aws:kms:eu-central-1:357860137776:key/523d997c-4ea2-4ffa-afba-edfd04eec883
+  SIGNING_ROLE: arn:aws:iam::357860137776:role/IntentGateCiReleaseSigning
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      bundle_sha256: ${{ steps.pack.outputs.sha256 }}
+      bundle_name: ${{ steps.pack.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: IntentGate-app/intentgate-helm
+          path: _helm
+          token: ${{ secrets.HELM_REPO_READ_TOKEN }}
+          fetch-depth: 0
+      - run: git -C _helm checkout --quiet "$(cat release/HELM_CHART_REF)"
+      - run: python3 -m pip install --quiet cryptography==46.0.7 jsonschema==4.26.0
+      - name: Release-input guards (both repositories)
+        run: |
+          set -euo pipefail
+          python3 "$TOOL" guard-release-input --root . --bundle-files release/bundle-files.json --exclude release/tests --exclude release/release-manifest.py
+          python3 "$TOOL" guard-release-input --root _helm --exclude tests/fixtures
+      - name: Assemble static files and prove the committed manifest is their fresh build
+        run: |
+          set -euo pipefail
+          S="$RUNNER_TEMP/stage"; release/assemble-bundle.sh . _helm "$S"
+          python3 "$TOOL" build --inputs "release/inputs/$(basename "${{ inputs.manifest }}" .release-manifest.json).inputs.json" \
+            --contract "$S/release/config-contract.json" --bundle-files release/bundle-files.json --bundle-root "$S" --out "$RUNNER_TEMP/fresh.json"
+          cmp "$RUNNER_TEMP/fresh.json" "${{ inputs.manifest }}"
+      - uses: sigstore/cosign-installer@v3
+      - name: Assume the CI signing identity
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.SIGNING_ROLE }}
+          aws-region: eu-central-1
+          role-session-name: install-release-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Sign the manifest (detached, KMS; the private key never leaves KMS)
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes --tlog-upload=false --key "awskms:///$KMS_KEY_ARN" \
+            --output-signature "$RUNNER_TEMP/release-manifest.json.sig" "${{ inputs.manifest }}"
+          # the consumer's verifier, against the pinned trust anchor, before anything ships
+          python3 "$TOOL" verify --manifest "${{ inputs.manifest }}" --sig "$RUNNER_TEMP/release-manifest.json.sig" \
+            --key-set release/trust/release-key-set.json --trust-anchor release/trust/release-trust-anchor.json
+      - name: Assemble the signed bundle (renders from the manifest; verify-bundle; CHECKSUMS)
+        id: pack
+        run: |
+          set -euo pipefail
+          B="$RUNNER_TEMP/bundle"; release/assemble-bundle.sh . _helm "$B" "${{ inputs.manifest }}" "$RUNNER_TEMP/release-manifest.json.sig"
+          NAME=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["release_id"])' "${{ inputs.manifest }}")
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='2026-01-01 00:00Z' -C "$B" -czf "$RUNNER_TEMP/$NAME.bundle.tgz" .
+          SHA=$(sha256sum "$RUNNER_TEMP/$NAME.bundle.tgz" | cut -d' ' -f1)
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"; echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "BUNDLE $NAME sha256=$SHA" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.name }}.bundle
+          path: ${{ runner.temp }}/${{ steps.pack.outputs.name }}.bundle.tgz
+          if-no-files-found: error
+
+  acceptance-kit:
+    # The rollback comparator is the EXISTING one (lab/scripts/acceptance/lkg-rollback-equivalence.sh),
+    # packaged by digest so the clean room never checks out a developer repository.
+    runs-on: ubuntu-24.04
+    outputs:
+      kit_sha256: ${{ steps.kit.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: IntentGate-app/intentgate-lab
+          token: ${{ secrets.ACCEPTANCE_KIT_READ_TOKEN }}
+          path: _lab
+      - id: kit
+        run: |
+          set -euo pipefail
+          mkdir kit && cp _lab/scripts/acceptance/lkg-rollback-equivalence.sh kit/
+          echo "lab_commit=$(git -C _lab rev-parse HEAD)" > kit/SOURCE
+          bash kit/lkg-rollback-equivalence.sh --selftest
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='2026-01-01 00:00Z' -czf acceptance-kit.tgz -C kit .
+          echo "sha256=$(sha256sum acceptance-kit.tgz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-kit
+          path: acceptance-kit.tgz
+
+  clean-room:
+    needs: [bundle, acceptance-kit]
+    uses: ./.github/workflows/clean-room.yml
+    with:
+      bundle_artifact: ${{ needs.bundle.outputs.bundle_name }}.bundle
+      bundle_sha256: ${{ needs.bundle.outputs.bundle_sha256 }}
+      bundle_run_id: ${{ github.run_id }}
+      kit_sha256: ${{ needs.acceptance-kit.outputs.kit_sha256 }}
+      candidate: ${{ inputs.candidate }}
+      previous_bundle_run_id: ${{ inputs.previous_bundle_run_id }}
+      previous_bundle_sha256: ${{ inputs.previous_bundle_sha256 }}
+    secrets: inherit
+
+  publish-gate:
+    # The release invariant. A customer release is impossible unless the manifest is releasable AND
+    # the clean room is GREEN (the clean-room workflow fails on any RED link, so `needs` enforces it).
+    needs: [bundle, clean-room]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography==46.0.7 jsonschema==4.26.0
+      - name: RELEASE_INVARIANT
+        run: |
+          set -euo pipefail
+          [ "${{ inputs.candidate }}" = "false" ] || { echo "::error::candidate runs never publish"; exit 1; }
+          python3 - "${{ inputs.manifest }}" <<'PY'
+          import json, sys
+          m = json.load(open(sys.argv[1]))
+          sys.exit(0 if m["releasable"] else f"NOT_RELEASABLE: {len(m['releasable_blockers'])} blocker(s)")
+          PY
+          echo "RELEASE_INVARIANT=GREEN (manifest releasable, clean room GREEN). Publication is an owner act."

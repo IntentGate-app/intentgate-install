@@ -1,0 +1,346 @@
+{
+  "inputs_version": "igrm-inputs/1",
+  "release_id": "intentgate-2026.09.30-rc0",
+  "created_at": "2026-09-30T00:00:00Z",
+  "_comment": "Component truth recovered from evidence only (lab repo f6a5507, platform repo 97178b8, console-pro ledger a6aff84, gateway 3acd0c4). Nothing here is an acceptance decision; status values are copied from the evidence named in status_evidence. releasable is NEVER an input: release-manifest.py computes it.",
+  "open_owner_decisions": [
+    {
+      "id": "D1",
+      "summary": "Product boundary: SDKs, Authority Portal (portal/, no repository) and extractor inclusion are not ruled",
+      "evidence": "claude/LKG-PRODUCT-PROTECTION-MATRIX-2026-09-30.md \u00a74"
+    },
+    {
+      "id": "D3",
+      "summary": "Acceptance of platform and gateway baselines (no accepted anchor for the running platform 97178b8, worker 39ef75af, gateway 3acd0c4)",
+      "evidence": "claude/LKG-PRODUCT-PROTECTION-MATRIX-2026-09-30.md \u00a74"
+    },
+    {
+      "id": "D5",
+      "summary": "Clean-room identity: local test IdP fixture vs dedicated Entra test tenant",
+      "evidence": "claude/LKG-CLEAN-ROOM-RELEASE-ACCEPTANCE-2026-09-30.md \u00a75"
+    },
+    {
+      "id": "D6",
+      "summary": "Distribution: offline image archives vs customer registry credential (GHCR images are private)",
+      "evidence": "claude/LKG-CLEAN-ROOM-RELEASE-ACCEPTANCE-2026-09-30.md \u00a75"
+    }
+  ],
+  "components": [
+    {
+      "name": "console-pro",
+      "kind": "first-party",
+      "role": "operator console (UI/BFF, licence verifier)",
+      "source": {
+        "repository": "https://github.com/IntentGate-app/intentgate-console-pro",
+        "commit": "416efb1bd56046fd678fce7163bf84806c72d50c",
+        "ref": "refs/heads/phase6b-distributed-enforcement-console"
+      },
+      "status": "ACCEPTED",
+      "status_evidence": "console-pro release-notes/lkg/AUTHORITATIVE-LAB-BASELINES.tsv @ a6aff84 (owner: AUTHORITATIVE_LAB=RECOVERED, 2026-09-30T11:58Z); the row itself records known visual regressions (Dashboard Version overflow, top-bar overflow)",
+      "accepted_anchor": {
+        "kind": "authoritative-baseline-ledger",
+        "tag": null,
+        "commit": "416efb1bd56046fd678fce7163bf84806c72d50c",
+        "evidence": "IntentGate-app/intentgate-console-pro@a6aff84:release-notes/lkg/AUTHORITATIVE-LAB-BASELINES.tsv"
+      },
+      "image": {
+        "repository": "ghcr.io/intentgate-app/intentgate-console-pro",
+        "digest": "sha256:6e4f9bb6c0567c19c956831d2cf1517c936524c01d07303855b9f9d33c18908f"
+      },
+      "attribution": "evidence/console-pro/build-attribution.json",
+      "attribution_source": "IntentGate-app/intentgate-lab@f6a5507:docs/S1-WP-09-CONSOLE-DEPLOY-20260930T073154Z/deploy-run-36685118703/build-attribution.json (image run 36673291777)",
+      "sbom": null,
+      "provenance_attestation": null,
+      "runtime": {
+        "service": "console-pro",
+        "port": 3000,
+        "publish": {
+          "bind_key": "CONSOLE_BIND",
+          "host_port": 3000
+        },
+        "health": {
+          "kind": "none"
+        },
+        "revision_source": {
+          "kind": "http-json",
+          "port": 3000,
+          "path": "/api/version",
+          "field": "commit"
+        },
+        "depends_on": [
+          "postgres",
+          "gateway",
+          "platform-gateway"
+        ],
+        "replicas": 1
+      },
+      "schema_owner": {
+        "ddl_mechanism": "lazy idempotent CREATE ... IF NOT EXISTS on first DB use (lib/scim/db.ts and ~12 stores)",
+        "migration_level": null
+      }
+    },
+    {
+      "name": "platform-gateway",
+      "kind": "first-party",
+      "role": "governed control plane (platform gateway)",
+      "source": {
+        "repository": "https://github.com/IntentGate-app/intentgate-platform",
+        "commit": "97178b872ccc10ca56e5f2456726b1d34b6ef983",
+        "ref": "refs/heads/s1-wp-09-rb-backport"
+      },
+      "status": "PROVISIONAL",
+      "status_evidence": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md \u00a72: running 97178b8 = S1-WP-09-CLOSURE 4601ca9 + 12 untagged commits; does not contain 5 closed-by-tag packages on r1-governed-state",
+      "accepted_anchor": {
+        "kind": "tag",
+        "tag": "S1-WP-09-CLOSURE-2026-09-29",
+        "commit": "4601ca96ff8ac6634b146c23666d7fa8ea10ee4d",
+        "image_digest": "sha256:ebe807d39e4c933e56c98d8d4cd5a0df05e0579ac5c4210e720127903c5b4cab",
+        "attribution": "evidence/platform-gateway-anchor-4601ca9/build-attribution.json",
+        "evidence": "IntentGate-app/intentgate-lab@f6a5507:docs/d0912-20260929T061847Z/signed-run-36396275227/build-attribution.json; lab compose.platform.yml pin"
+      },
+      "image": {
+        "repository": "ghcr.io/intentgate-app/intentgate-platform-gateway",
+        "digest": "sha256:be8a5a4e4c23d13162ca372024bc3c20b9eca38423a013bce5d65a241b0db628"
+      },
+      "attribution": "evidence/platform-gateway/build-attribution.json",
+      "attribution_source": "IntentGate-app/intentgate-lab@f6a5507:docs/d0912-20260930T073154Z/signed-run-36684322782/",
+      "sbom": "evidence/platform-gateway/sbom.json",
+      "provenance_attestation": "evidence/platform-gateway/attestation.signed.json",
+      "runtime": {
+        "service": "platform-gateway",
+        "port": 4000,
+        "health": {
+          "kind": "http",
+          "path": "/health",
+          "compose_test": [
+            "CMD",
+            "wget",
+            "-q",
+            "-O",
+            "/dev/null",
+            "http://localhost:4000/health"
+          ]
+        },
+        "revision_source": {
+          "kind": "oci-label",
+          "label": "org.opencontainers.image.revision"
+        },
+        "depends_on": [
+          "postgres"
+        ],
+        "replicas": 1
+      },
+      "schema_owner": {
+        "ddl_mechanism": "idempotent DDL at start (bootstrap.ts); numbered SQL 0001-0005 have no runner; falls back to in-memory stores if schema-ensure fails",
+        "migration_level": null
+      }
+    },
+    {
+      "name": "governance-worker",
+      "kind": "first-party",
+      "role": "platform governance run substrate worker",
+      "source": {
+        "repository": "https://github.com/IntentGate-app/intentgate-platform",
+        "commit": "39ef75af04655af2ffe671159e0f71516ed4e2a8",
+        "ref": null
+      },
+      "status": "PROVISIONAL",
+      "status_evidence": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md \u00a72: S1-WP-05-BEHAVIOURAL tag says NOT accepted; Wave 4 acceptance measured on 9334199, not this digest",
+      "accepted_anchor": {
+        "kind": "tag",
+        "tag": "LKG-WAVE4-2026-09-24",
+        "commit": "9334199df16d6badc18f8f27e987ea8130642cb1",
+        "image_digest": null,
+        "attribution": null,
+        "evidence": "IntentGate-app/intentgate-lab@f6a5507:docs/WAVE-4-CEREMONY.md (platform baseline 9334199); no worker image digest recorded for the anchor"
+      },
+      "image": {
+        "repository": "ghcr.io/intentgate-app/intentgate-platform-governance-worker",
+        "digest": "sha256:d6bfafe7f494a0d6fa80257508d24d18fe3ef00f7fa9d9b7e3073fa1dd66a761"
+      },
+      "attribution": null,
+      "attribution_source": "none recovered: no IGBA/1 record for the worker exists in lab/docs",
+      "sbom": null,
+      "provenance_attestation": null,
+      "runtime": {
+        "service": "governance-worker",
+        "port": 4100,
+        "health": {
+          "kind": "http",
+          "path": "/readyz",
+          "compose_test": [
+            "CMD",
+            "node",
+            "-e",
+            "require('http').get('http://127.0.0.1:4100/readyz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+          ]
+        },
+        "revision_source": {
+          "kind": "http-json",
+          "port": 4100,
+          "path": "/healthz",
+          "field": "commit"
+        },
+        "depends_on": [
+          "postgres"
+        ],
+        "replicas": 1
+      },
+      "schema_owner": {
+        "ddl_mechanism": "idempotent ensureGovernanceRunsSchema at start",
+        "migration_level": null
+      }
+    },
+    {
+      "name": "gateway",
+      "kind": "first-party",
+      "role": "Go data-plane gateway (policy enforcement point)",
+      "source": {
+        "repository": "https://github.com/IntentGate-app/intentgate-gateway",
+        "commit": "3acd0c4da3aa7ee44c06e52e639abeaff865274b",
+        "ref": "refs/heads/main"
+      },
+      "status": "UNACCEPTED",
+      "status_evidence": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md \u00a72: 3acd0c4 is the Lab primary pulled by the floating tag :main with no build record; the a2 shadow ce2ff488 (sha256:a9dd19a5..., SIGNING_UNAVAILABLE, NOT_ELIGIBLE) is barred by ruling N-3",
+      "accepted_anchor": {
+        "kind": "tag",
+        "tag": "LKG-WAVE4-2026-09-24",
+        "commit": "11cac3719664d0546eab0a80f78fdf0d92a9937b",
+        "image_digest": null,
+        "attribution": null,
+        "evidence": "IntentGate-app/intentgate-lab@f6a5507:docs/WAVE-4-CEREMONY.md remote tag verification (gateway 11cac37 MATCH); S4-WP-37-AC-3-OWNER-PACK: no governed image of 11cac37 built yet"
+      },
+      "image": {
+        "repository": "ghcr.io/intentgate-app/intentgate-gateway",
+        "digest": "sha256:e2ab4780b8bcedcf0ab915f1e7b93836f8df0238f3c371d5d96e97234fbf3c70"
+      },
+      "image_digest_source": "IntentGate-app/intentgate-lab@f6a5507:docs/LAB-RECOVERY-SNAPSHOT-20260930T110032Z/snapshot.txt (repo digest of the running :main pull)",
+      "attribution": null,
+      "attribution_source": "none: no IGBA/1 record exists for 3acd0c4",
+      "sbom": null,
+      "provenance_attestation": null,
+      "runtime": {
+        "service": "gateway",
+        "port": 8080,
+        "publish": {
+          "bind_key": "GATEWAY_BIND",
+          "host_port": 8080
+        },
+        "health": {
+          "kind": "http",
+          "path": "/healthz"
+        },
+        "revision_source": {
+          "kind": "http-json",
+          "port": 8080,
+          "path": "/healthz",
+          "field": "revision"
+        },
+        "depends_on": [
+          "postgres",
+          "extractor",
+          "platform-gateway"
+        ],
+        "replicas": 1
+      },
+      "schema_owner": {
+        "ddl_mechanism": "idempotent DDL at start from embedded schema.sql; destructive DROP/re-ADD constraint pairs on every boot",
+        "migration_level": null
+      }
+    },
+    {
+      "name": "extractor",
+      "kind": "first-party",
+      "role": "intent extractor (gateway runtime dependency)",
+      "source": {
+        "repository": "https://github.com/IntentGate-app/intentgate-extractor",
+        "commit": null,
+        "ref": null
+      },
+      "status": "UNACCEPTED",
+      "status_evidence": "claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md \u00a72: extractor has only release tags; the Lab runs a box-local build intentgate-lab/extractor:dev (local image id sha256:5c50c4ac..., no revision label, no registry digest)",
+      "accepted_anchor": null,
+      "image": {
+        "repository": "ghcr.io/intentgate-app/intentgate-extractor",
+        "digest": null
+      },
+      "attribution": null,
+      "attribution_source": "none",
+      "sbom": null,
+      "provenance_attestation": null,
+      "runtime": {
+        "service": "extractor",
+        "port": 8090,
+        "health": {
+          "kind": "tcp",
+          "compose_test": [
+            "CMD-SHELL",
+            "python -c \"import socket,sys; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8090)); s.close(); sys.exit(0)\""
+          ]
+        },
+        "revision_source": {
+          "kind": "oci-label",
+          "label": "org.opencontainers.image.revision"
+        },
+        "depends_on": [],
+        "replicas": 1
+      },
+      "schema_owner": null
+    },
+    {
+      "name": "postgres",
+      "kind": "third-party",
+      "role": "shared product database (intentgate)",
+      "source": {
+        "repository": "https://hub.docker.com/_/postgres",
+        "commit": null,
+        "ref": null,
+        "upstream_version": "16 (alpine variant)"
+      },
+      "status": "THIRD_PARTY",
+      "status_evidence": "Lab image id observed in IntentGate-app/intentgate-lab@f6a5507:docs/LAB-RECOVERY-SNAPSHOT-20260930T110032Z/snapshot.txt; resolvability of this digest in the upstream registry was NOT verified (no registry access from the build host)",
+      "registry_verified": false,
+      "accepted_anchor": null,
+      "image": {
+        "repository": "docker.io/library/postgres",
+        "digest": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685"
+      },
+      "attribution": null,
+      "sbom": null,
+      "provenance_attestation": null,
+      "runtime": {
+        "service": "postgres",
+        "port": 5432,
+        "health": {
+          "kind": "exec",
+          "compose_test": [
+            "CMD-SHELL",
+            "pg_isready -U intentgate -d intentgate -h 127.0.0.1"
+          ]
+        },
+        "revision_source": {
+          "kind": "digest-only"
+        },
+        "depends_on": [],
+        "replicas": 1,
+        "volume": {
+          "name": "intentgate-db",
+          "mount": "/var/lib/postgresql/data"
+        }
+      },
+      "schema_owner": null
+    }
+  ],
+  "schema": {
+    "database": "intentgate",
+    "fingerprint_algorithm": "lkg-lab-state/1 DB_SCHEMA: pg_dump --schema-only | drop lines starting '--', 'SET ', 'SELECT pg_catalog.set_config', '\\restrict'/'\\unrestrict', blank | sha256 | first 32 hex",
+    "expected_fingerprint": null,
+    "expected_fingerprint_evidence": null,
+    "migration_manifest": null,
+    "lab_observed_reference": {
+      "fingerprint": "5ea2e7eba5d6a3c13b9d21cca07ff14f",
+      "evidence": "IntentGate-app/intentgate-lab@f6a5507:docs/LKG-ROLLBACK-VERIFICATION-2026-09-30/restored-state-capture-1.txt",
+      "note": "SUPPORTING ONLY. The Lab database carries Lab-only tables and history; a clean install is not expected to equal it and this value is never used as the expected fingerprint."
+    }
+  }
+}

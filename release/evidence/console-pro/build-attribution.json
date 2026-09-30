@@ -1,0 +1,43 @@
+{
+  "record_version": "IGBA/1",
+  "artifact": {
+    "digest": "sha256:6e4f9bb6c0567c19c956831d2cf1517c936524c01d07303855b9f9d33c18908f",
+    "media_type": "application/vnd.oci.image.index.v1+json",
+    "registry_ref": "ghcr.io/intentgate-app/intentgate-console-pro",
+    "self_report": "STAMPED"
+  },
+  "source": {
+    "revision": "416efb1bd56046fd678fce7163bf84806c72d50c",
+    "repository": "https://github.com/IntentGate-app/intentgate-console-pro",
+    "ref": "refs/heads/phase6b-distributed-enforcement-console",
+    "tree_state": "CLEAN"
+  },
+  "build_definition": {
+    "workflow": ".github/workflows/lab-image.yml",
+    "workflow_ref": "IntentGate-app/intentgate-console-pro/.github/workflows/lab-image.yml@refs/heads/phase6b-distributed-enforcement-console",
+    "trigger": "workflow_dispatch"
+  },
+  "builder": {
+    "id": "https://github.com/actions/runner",
+    "run_id": "36673291777",
+    "run_attempt": "1",
+    "runner_environment": "github-hosted"
+  },
+  "provenance": {
+    "state": "PROVENANCE_ESTABLISHED",
+    "predicate_type": "https://slsa.dev/provenance/v1"
+  },
+  "signing": {
+    "state": "SIGNED",
+    "trust_purpose": "RELEASE_ARTIFACT",
+    "key_id": "intentgate-release-2026-01"
+  },
+  "built_at": "2026-09-30T05:29:57Z",
+  "recorded_at": "2026-09-30T05:29:57Z",
+  "residuals": [],
+  "acceptance_eligibility": {
+    "policy": "IGBA-ELIGIBILITY/2",
+    "signing_required": false,
+    "state": "ELIGIBLE"
+  }
+}

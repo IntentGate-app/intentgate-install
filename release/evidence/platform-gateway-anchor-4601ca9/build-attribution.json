@@ -1,0 +1,43 @@
+{
+  "record_version": "IGBA/1",
+  "artifact": {
+    "digest": "sha256:ebe807d39e4c933e56c98d8d4cd5a0df05e0579ac5c4210e720127903c5b4cab",
+    "media_type": "application/vnd.oci.image.index.v1+json",
+    "registry_ref": "ghcr.io/intentgate-app/intentgate-platform-gateway",
+    "self_report": "NOT_STAMPED"
+  },
+  "source": {
+    "revision": "4601ca96ff8ac6634b146c23666d7fa8ea10ee4d",
+    "repository": "https://github.com/IntentGate-app/intentgate-platform",
+    "ref": "refs/heads/s1-wp-09-rb-backport",
+    "tree_state": "CLEAN"
+  },
+  "build_definition": {
+    "workflow": ".github/workflows/platform-image.yml",
+    "workflow_ref": "IntentGate-app/intentgate-platform/.github/workflows/platform-image.yml@refs/heads/s1-wp-09-rb-backport",
+    "trigger": "workflow_dispatch"
+  },
+  "builder": {
+    "id": "https://github.com/actions/runner",
+    "run_id": "36396275227",
+    "run_attempt": "1",
+    "runner_environment": "github-hosted"
+  },
+  "provenance": {
+    "state": "PROVENANCE_ESTABLISHED",
+    "predicate_type": "https://slsa.dev/provenance/v1"
+  },
+  "signing": {
+    "state": "SIGNED",
+    "trust_purpose": "RELEASE_ARTIFACT",
+    "key_id": "intentgate-release-2026-01"
+  },
+  "built_at": "2026-09-28T08:16:38Z",
+  "recorded_at": "2026-09-28T08:16:38Z",
+  "residuals": [],
+  "acceptance_eligibility": {
+    "policy": "IGBA-ELIGIBILITY/2",
+    "signing_required": false,
+    "state": "ELIGIBLE"
+  }
+}

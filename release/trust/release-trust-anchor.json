@@ -1,0 +1,10 @@
+{
+  "anchor_version": "IGRK-ANCHOR/1",
+  "_comment": "THE CONSUMER'S OWN pinned fingerprints, obtained out of band. Not the vendor's file.",
+  "fingerprints": [
+    {
+      "key_id": "intentgate-release-2026-01",
+      "fingerprint_sha256": "4efafcb1a932277c6ed355d98034120c699ad0f37c82cd02c90b71b3ad85ba77"
+    }
+  ]
+}

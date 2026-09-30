@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentgate.app/schemas/release-manifest/igrm-1.json",
+  "title": "IntentGate canonical release manifest (igrm/1)",
+  "description": "One immutable, signed manifest per release. Compose and Helm are rendered from it. Image identity is repository + sha256 digest only. `releasable` and `releasable_blockers` are computed by release-manifest.py and re-computed by every verifier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_version", "release_id", "created_at", "product", "components", "schema", "config_contract",
+               "open_owner_decisions", "bundle", "provenance", "releasable", "releasable_blockers"],
+  "properties": {
+    "manifest_version": {"const": "igrm/1"},
+    "release_id": {"type": "string", "pattern": "^intentgate-[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}(-rc[0-9]+)?$"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "product": {"const": "IntentGate"},
+    "components": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/component"}},
+    "schema": {
+      "type": "object",
+      "required": ["database", "fingerprint_algorithm", "expected_fingerprint", "migration_manifest", "owners"],
+      "properties": {
+        "database": {"type": "string"},
+        "fingerprint_algorithm": {"type": "string"},
+        "expected_fingerprint": {"type": ["string", "null"], "pattern": "^[0-9a-f]{32}$"},
+        "expected_fingerprint_evidence": {"type": ["string", "null"]},
+        "migration_manifest": {"type": ["object", "null"]},
+        "owners": {"type": "array", "items": {"type": "object", "required": ["component", "ddl_mechanism", "migration_level"],
+                   "properties": {"component": {"type": "string"}, "ddl_mechanism": {"type": "string"},
+                                  "migration_level": {"type": ["string", "null"]}}}},
+        "lab_observed_reference": {"type": ["object", "null"]}
+      }
+    },
+    "config_contract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "contract_version", "required_keys"],
+      "properties": {
+        "path": {"type": "string"}, "sha256": {"$ref": "#/$defs/hex64"},
+        "contract_version": {"const": "igcc/1"},
+        "required_keys": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"}}
+      }
+    },
+    "open_owner_decisions": {"type": "array", "items": {"type": "object", "required": ["id", "summary"]}},
+    "bundle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["static", "rendered", "generated_at_install"],
+      "properties": {
+        "static": {"type": "object", "additionalProperties": {"$ref": "#/$defs/hex64"}},
+        "rendered": {"type": "array", "items": {"type": "string"}},
+        "generated_at_install": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "provenance": {"type": "object", "required": ["generator", "generator_sha256", "inputs", "inputs_sha256"]},
+    "releasable": {"type": "boolean"},
+    "releasable_blockers": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+                            "required": ["component", "code", "detail"],
+                            "properties": {"component": {"type": "string"}, "code": {"type": "string", "pattern": "^[A-Z_]+$"}, "detail": {"type": "string"}}}}
+  },
+  "$defs": {
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+    "digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "component": {
+      "type": "object",
+      "required": ["name", "kind", "role", "source", "status", "status_evidence", "accepted_anchor", "image",
+                   "attribution", "sbom", "provenance_attestation", "runtime", "schema_owner"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+        "kind": {"enum": ["first-party", "third-party"]},
+        "role": {"type": "string"},
+        "source": {"type": "object", "required": ["repository", "commit"],
+                   "properties": {"repository": {"type": "string"}, "commit": {"$ref": "#/$defs/commit"}, "ref": {"type": ["string", "null"]}}},
+        "status": {"enum": ["ACCEPTED", "PROVISIONAL", "UNACCEPTED", "THIRD_PARTY"]},
+        "status_evidence": {"type": "string"},
+        "accepted_anchor": {
+          "type": ["object", "null"],
+          "required": ["kind", "tag", "commit", "evidence"],
+          "properties": {
+            "kind": {"enum": ["tag", "authoritative-baseline-ledger"]},
+            "tag": {"type": ["string", "null"]},
+            "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "image_digest": {"$ref": "#/$defs/digest"},
+            "attribution_sha256": {"$ref": "#/$defs/hex64"},
+            "evidence": {"type": "string"}
+          }
+        },
+        "image": {"type": "object", "additionalProperties": false, "required": ["repository", "digest"],
+                  "properties": {"repository": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*[a-z0-9]$"}, "digest": {"$ref": "#/$defs/digest"}}},
+        "attribution": {"type": ["object", "null"], "required": ["format", "path", "sha256", "signing_state", "eligibility"],
+                        "properties": {"format": {"const": "IGBA/1"}, "sha256": {"$ref": "#/$defs/hex64"}}},
+        "sbom": {"type": ["object", "null"], "required": ["path", "sha256"]},
+        "provenance_attestation": {"type": ["object", "null"], "required": ["path", "sha256", "subject_digest", "signature"],
+                                   "properties": {"signature": {"enum": ["VERIFIED", "UNVERIFIED", "INVALID"]}}},
+        "registry_verified": {"type": "boolean"},
+        "runtime": {"type": "object", "required": ["service", "port", "health", "revision_source"],
+                    "properties": {"revision_source": {"type": "object", "required": ["kind"],
+                                   "properties": {"kind": {"enum": ["http-json", "oci-label", "digest-only"]}}}}},
+        "schema_owner": {"type": ["object", "null"]}
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "_comment": "The release bundle: the ONLY input to clean-room acceptance and the only thing shipped. static files are hashed into the manifest; rendered files are re-rendered from the manifest by every verifier; generated_at_install are the only files an install may add. Anything else in an install or bundle directory fails verify-bundle / verify-install.",
+  "static": [
+    "install.sh",
+    "install.ps1",
+    "README.md",
+    "release/release-manifest.py",
+    "release/acceptance-smoke.py",
+    "release/release-manifest.schema.json",
+    "release/config-contract.json",
+    "release/PROVENANCE.md",
+    "release/trust/release-key-set.json",
+    "release/trust/release-trust-anchor.json",
+    "release/evidence/console-pro/build-attribution.json",
+    "release/evidence/platform-gateway/build-attribution.json",
+    "release/evidence/platform-gateway/sbom.json",
+    "release/evidence/platform-gateway/attestation.signed.json",
+    "release/evidence/platform-gateway/signing-record.json",
+    "release/evidence/platform-gateway-anchor-4601ca9/build-attribution.json",
+    "helm/intentgate/Chart.yaml",
+    "helm/intentgate/values.yaml",
+    "helm/intentgate/.helmignore",
+    "helm/intentgate/LICENSE",
+    "helm/intentgate/templates/_helpers.tpl",
+    "helm/intentgate/templates/components.yaml",
+    "helm/intentgate/templates/NOTES.txt",
+    "helm/intentgate/templates/serviceaccount.yaml"
+  ],
+  "sources": {
+    "helm/intentgate/": "<helm chart checkout at release/HELM_CHART_REF>"
+  },
+  "rendered": [
+    "docker-compose.yml",
+    ".env.example",
+    "helm/intentgate/values.release.yaml"
+  ],
+  "generated_at_install": [
+    ".env"
+  ]
+}

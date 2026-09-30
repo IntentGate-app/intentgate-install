@@ -1,0 +1,159 @@
+name: CI
+
+# Installer CI. Every job is a release-input guard: a failure here means the tree cannot produce a
+# release bundle. RED is an allowed result; a false GREEN is not. Nothing here is weakened to make
+# the current packaging pass.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TOOL: release/release-manifest.py
+  CONTRACT: release/config-contract.json
+  RC_MANIFEST: release/manifests/intentgate-2026.09.30-rc0.release-manifest.json
+
+jobs:
+  guard:
+    name: release-input guard (stale artifacts, nested clones, archives, latest / mutable tags)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: guard-release-input
+        # release/tests hold deliberately broken fixtures; the tool holds the patterns it searches for.
+        run: python3 "$TOOL" guard-release-input --root . --bundle-files release/bundle-files.json --exclude release/tests --exclude release/release-manifest.py
+      - name: No tag-selecting keys anywhere in customer paths
+        run: |
+          set -euo pipefail
+          if git grep -nE '\b(IMAGE_TAG|CONSOLE_IMAGE_TAG|INTENTGATE_VERSION)=' -- . ':!release/tests' ':!release/config-contract.json' ':!release/release-manifest.py'; then
+            echo "::error::a tag-selecting key is set in a customer path"; exit 1
+          fi
+
+  shellcheck:
+    name: shellcheck + PSScriptAnalyzer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          python3 -m pip install --quiet shellcheck-py==0.11.0.1
+          shellcheck -S style install.sh release/assemble-bundle.sh
+      - name: PSScriptAnalyzer (install.ps1)
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $null = [System.Management.Automation.Language.Parser]::ParseFile("$PWD/install.ps1", [ref]$null, [ref]$errs)
+          if ($errs) { $errs; exit 1 }
+          $r = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
+          if ($r) { $r | Format-Table; exit 1 }
+
+  tests:
+    name: manifest tooling anti-vacuity tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --quiet cryptography==46.0.7 jsonschema==4.26.0
+      - run: python -m unittest -v release/tests/test_release_manifest.py
+
+  manifest:
+    name: manifest lint + signature + renders == committed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography==46.0.7 jsonschema==4.26.0
+      - name: Every committed manifest lints (computed releasable, digest-only, no latest)
+        run: |
+          set -euo pipefail
+          for m in release/manifests/*.release-manifest.json; do python3 "$TOOL" lint --manifest "$m"; done
+      - name: Every committed signature verifies against the pinned release key
+        run: |
+          set -euo pipefail
+          for m in release/manifests/*.release-manifest.json; do
+            if [ -f "$m.sig" ]; then
+              python3 "$TOOL" verify --manifest "$m" --sig "$m.sig" --key-set release/trust/release-key-set.json --trust-anchor release/trust/release-trust-anchor.json
+            else
+              echo "UNSIGNED $m (the release workflow signs with cosign + KMS; an unsigned manifest is never installable)"
+            fi
+          done
+      - name: docker-compose.yml == render of the current manifest (no hand-edited image refs)
+        run: python3 "$TOOL" render-compose --manifest "$RC_MANIFEST" --contract "$CONTRACT" --check docker-compose.yml
+      - name: .env.example == render of the configuration contract
+        run: python3 "$TOOL" render-env-example --contract "$CONTRACT" --check .env.example
+      - name: The rendered compose is a valid compose model and fails closed where a digest is missing
+        run: |
+          set -euo pipefail
+          # With a complete test env, compose must refuse ONLY because of an unresolved digest, never parse errors.
+          python3 - <<'PY' > /tmp/ci.env
+          import json
+          c = json.load(open("release/config-contract.json"))
+          for k in c["keys"]:
+              if k["required"]:
+                  print(f"{k['name']}=https://ci.invalid/x" if "URL" in k["name"] or "ISSUER" in k["name"] else f"{k['name']}=ci-placeholder-value-0123456789abcdef0123456789")
+          PY
+          if docker compose -f docker-compose.yml --env-file /tmp/ci.env config -q 2>/tmp/err; then
+            echo "compose model valid: every image resolved by digest"
+          else
+            cat /tmp/err
+            grep -q "no digest for" /tmp/err || { echo "::error::compose failed for a reason other than a missing digest"; exit 1; }
+            echo "::warning::the current manifest has components without a digest; compose fails closed (expected RED for rc0)"
+          fi
+
+  manifest-current:
+    name: committed manifest == fresh build of its inputs over the assembled bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out the Helm chart at the pinned ref
+        uses: actions/checkout@v4
+        with:
+          repository: IntentGate-app/intentgate-helm
+          path: _helm
+          token: ${{ secrets.HELM_REPO_READ_TOKEN }}
+          fetch-depth: 0
+      - name: Pin the chart to release/HELM_CHART_REF
+        run: git -C _helm checkout --quiet "$(cat release/HELM_CHART_REF)"
+      - run: python3 -m pip install --quiet cryptography==46.0.7 jsonschema==4.26.0
+      - name: Assemble, rebuild, compare
+        run: |
+          set -euo pipefail
+          S=$(mktemp -d)
+          release/assemble-bundle.sh . _helm "$S"
+          python3 "$TOOL" build --inputs release/inputs/intentgate-2026.09.30-rc0.inputs.json --contract "$S/release/config-contract.json" \
+            --bundle-files release/bundle-files.json --bundle-root "$S" --out /tmp/rebuilt.json
+          cmp /tmp/rebuilt.json "$RC_MANIFEST" || { diff <(python3 -m json.tool /tmp/rebuilt.json) <(python3 -m json.tool "$RC_MANIFEST") | head -50; echo "::error::committed manifest is stale: rebuild it"; exit 1; }
+
+  release-readiness:
+    name: release readiness (RED until the manifest is releasable; this is the honest state, not a defect of CI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [manifest]
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet cryptography==46.0.7 jsonschema==4.26.0
+      - name: Is the current manifest customer-releasable?
+        run: |
+          python3 - "$RC_MANIFEST" <<'PY'
+          import json, sys
+          m = json.load(open(sys.argv[1]))
+          for b in m["releasable_blockers"]:
+              print(f"BLOCKER {b['component']}: {b['code']} - {b['detail']}")
+          print(f"RELEASABLE={str(m['releasable']).lower()} ({len(m['releasable_blockers'])} blocker(s))")
+          sys.exit(0 if m["releasable"] else 1)
+          PY
