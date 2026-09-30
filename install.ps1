@@ -18,7 +18,8 @@ $Tool = "release/release-manifest.py"
 $Man = "release-manifest.json"
 $Sig = "release-manifest.json.sig"
 $Contract = "release/config-contract.json"
-$Trust = @("--key-set", "release/trust/release-key-set.json", "--trust-anchor", "release/trust/release-trust-anchor.json")
+# The release key is trusted ONLY by a fingerprint obtained OUT OF BAND (never from this folder).
+$Fp = $env:INTENTGATE_RELEASE_KEY_FINGERPRINT
 
 function Say($m)  { Write-Host $m -ForegroundColor White }
 function OK($m)   { Write-Host "  OK " -ForegroundColor Green -NoNewline; Write-Host $m }
@@ -37,6 +38,8 @@ if (-not $script:Python) { Die "Python 3.8+ is required (the release verifier is
 OK "docker, docker compose and Python are available."
 
 Say "Step 2 of 6  Verifying the signed release manifest"
+if ($Fp -notmatch "^[0-9a-f]{64}$") { Die "Set INTENTGATE_RELEASE_KEY_FINGERPRINT to the IntentGate release-key fingerprint you received out of band." }
+$Trust = @("--key-set", "release/trust/release-key-set.json", "--pinned-fingerprint", $Fp)
 if (-not (Test-Path $Man)) { Die "$Man is missing: this folder is not a release bundle." }
 if (-not (Test-Path $Sig) -or (Get-Item $Sig).Length -eq 0) { Die "$Sig is missing: an unsigned manifest is never installed." }
 $Req = @("--require-releasable")

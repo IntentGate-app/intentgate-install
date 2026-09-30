@@ -473,6 +473,42 @@ class BrokenFixtures(unittest.TestCase):
         self.assertFails(*run("verify", "--manifest", self.f.p("release-manifest.json"), "--sig", self.f.p("release-manifest.json.sig"),
                               *self.f.trust()), "NO_TRUSTED_KEY")
 
+    def test_substituted_trust_root_refused_by_out_of_band_pin(self) -> None:
+        """An attacker who controls the bundle replaces key set + anchor and re-signs. The bundled anchor
+        is circular and accepts it; the out-of-band pinned fingerprint (what install.sh uses) refuses it."""
+        self.good()
+        point = lambda k: k.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+        genuine_fp = sha(SPKI_PREFIX + point(self.f.ec_key))
+        rc, o = run("verify", "--manifest", self.f.p("release-manifest.json"), "--sig", self.f.p("release-manifest.json.sig"),
+                    "--key-set", os.path.join(self.f.rel, "trust", "release-key-set.json"), "--pinned-fingerprint", genuine_fp)
+        self.assertEqual(rc, 0, o)  # positive control for the pinned mode
+        atk = ec.generate_private_key(ec.SECP256R1())
+        afp = sha(SPKI_PREFIX + point(atk))
+        json.dump({"keys": [{"key_id": "attacker", "algorithm": "ECDSA_P256_SHA256", "public_key_hex": point(atk).hex(),
+                             "fingerprint_sha256": afp, "status": "ACTIVE"}]}, open(os.path.join(self.f.rel, "trust", "release-key-set.json"), "w"))
+        json.dump({"fingerprints": [{"key_id": "attacker", "fingerprint_sha256": afp}]}, open(os.path.join(self.f.rel, "trust", "release-trust-anchor.json"), "w"))
+        self.f.sign_ec("release-manifest.json", key=atk)
+        rc, o = run("verify", "--manifest", self.f.p("release-manifest.json"), "--sig", self.f.p("release-manifest.json.sig"), *self.f.trust())
+        self.assertEqual(rc, 0, "the bundled anchor is circular by construction; this documents why install.sh never uses it")
+        self.assertFails(*run("verify", "--manifest", self.f.p("release-manifest.json"), "--sig", self.f.p("release-manifest.json.sig"),
+                              "--key-set", os.path.join(self.f.rel, "trust", "release-key-set.json"), "--pinned-fingerprint", genuine_fp),
+                         "NO_TRUSTED_KEY")
+
+    def test_installer_requires_out_of_band_fingerprint(self) -> None:
+        d = tempfile.mkdtemp()
+        try:
+            shutil.copy(os.path.join(ROOT, "install.sh"), d)
+            open(os.path.join(d, "release-manifest.json"), "w").write("{}")
+            open(os.path.join(d, "release-manifest.json.sig"), "w").write("x")
+            env = {k: v for k, v in os.environ.items() if k != "INTENTGATE_RELEASE_KEY_FINGERPRINT"}
+            r = subprocess.run(["bash", os.path.join(d, "install.sh")], capture_output=True, text=True, env=env)
+            self.assertNotEqual(r.returncode, 0)
+            if "Docker" in r.stderr and "INTENTGATE_RELEASE_KEY_FINGERPRINT" not in r.stderr:
+                self.skipTest("docker prerequisite not met before the fingerprint step")
+            self.assertIn("INTENTGATE_RELEASE_KEY_FINGERPRINT", r.stderr)
+        finally:
+            shutil.rmtree(d)
+
     def test_test_key_requires_explicit_opt_in(self) -> None:
         self.good()
         run("sign", "--manifest", self.f.p("release-manifest.json"), "--test-private-key", self.f.p("test.key"), "--sig-out", self.f.p("t.sig"))

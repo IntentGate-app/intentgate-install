@@ -40,6 +40,9 @@ permissions:
 
 env:
   PROJECT: intentgate
+  # The release-key fingerprint, pinned HERE (out of band relative to the bundle under test), equal to
+  # intentgate-release-2026-01 in the platform key set / trust anchor (IGRK/1). Never read from the bundle.
+  INTENTGATE_RELEASE_KEY_FINGERPRINT: 4efafcb1a932277c6ed355d98034120c699ad0f37c82cd02c90b71b3ad85ba77
 
 jobs:
   compose:
@@ -102,7 +105,7 @@ jobs:
           python3 release/release-manifest.py collect-facts --manifest release-manifest.json --form compose --project "$PROJECT" \
             --install-dir . --contract release/config-contract.json --out "$RUNNER_TEMP/facts.json"
           python3 release/release-manifest.py verify-install --manifest release-manifest.json --sig release-manifest.json.sig \
-            --key-set release/trust/release-key-set.json --trust-anchor release/trust/release-trust-anchor.json \
+            --key-set release/trust/release-key-set.json --pinned-fingerprint "$INTENTGATE_RELEASE_KEY_FINGERPRINT" \
             --contract release/config-contract.json --facts "$RUNNER_TEMP/facts.json" | tee "$RUNNER_TEMP/provenance-chain.txt"
       - name: Product acceptance / security smoke
         if: always()
@@ -161,7 +164,7 @@ jobs:
           python3 -m pip install --quiet cryptography==46.0.7 jsonschema==4.26.0
           REQ=--require-releasable; [ "${{ inputs.candidate }}" = "true" ] && REQ=
           python3 release/release-manifest.py verify --manifest release-manifest.json --sig release-manifest.json.sig \
-            --key-set release/trust/release-key-set.json --trust-anchor release/trust/release-trust-anchor.json $REQ
+            --key-set release/trust/release-key-set.json --pinned-fingerprint "$INTENTGATE_RELEASE_KEY_FINGERPRINT" $REQ
           python3 release/release-manifest.py verify-bundle --manifest release-manifest.json --bundle-dir .
       - uses: azure/setup-helm@v4
         with:
@@ -216,7 +219,7 @@ jobs:
           python3 release/release-manifest.py collect-facts --manifest release-manifest.json --form helm --namespace "$PROJECT" \
             --install-dir . --contract release/config-contract.json --config-facts "$RUNNER_TEMP/config-facts.json" --out "$RUNNER_TEMP/facts.json"
           python3 release/release-manifest.py verify-install --manifest release-manifest.json --sig release-manifest.json.sig \
-            --key-set release/trust/release-key-set.json --trust-anchor release/trust/release-trust-anchor.json \
+            --key-set release/trust/release-key-set.json --pinned-fingerprint "$INTENTGATE_RELEASE_KEY_FINGERPRINT" \
             --contract release/config-contract.json --facts "$RUNNER_TEMP/facts.json" | tee "$RUNNER_TEMP/provenance-chain.txt"; a=${PIPESTATUS[0]}
           python3 release/acceptance-smoke.py --manifest release-manifest.json --form helm --namespace "$PROJECT" | tee "$RUNNER_TEMP/smoke.txt"; b=${PIPESTATUS[0]}
           [ "$a" = 0 ] && [ "$b" = 0 ]

@@ -116,18 +116,30 @@ def _crypto():
     return hashes, serialization, ec, ed25519, InvalidSignature
 
 
-def trusted_release_keys(key_set_path: str, anchor_path: str) -> list[dict[str, Any]]:
+def trusted_release_keys(key_set_path: str, anchor_path: str | None, pinned_fps: list[str] | None = None) -> list[dict[str, Any]]:
     """ACTIVE ECDSA P-256 keys whose SPKI fingerprint equals BOTH the key set's declaration and the
-    consumer's pinned trust anchor. A key the anchor does not name is not trusted."""
-    ks, an = load_json(key_set_path), load_json(anchor_path)
-    pinned = {(f["key_id"], f["fingerprint_sha256"]) for f in an.get("fingerprints", [])}
+    consumer's pinned trust: an anchor file, or fingerprints passed explicitly (--pinned-fingerprint).
+
+    A trust anchor that travels INSIDE the bundle it verifies is circular: whoever can replace the
+    bundle can replace the anchor, re-hash it into the manifest and re-sign. Customer installs and the
+    clean room therefore pin the fingerprint out of band (install.sh: INTENTGATE_RELEASE_KEY_FINGERPRINT)."""
+    ks = load_json(key_set_path)
+    if pinned_fps:
+        pinned_any = {f.lower() for f in pinned_fps}
+        pinned = None
+    else:
+        an = load_json(anchor_path)
+        pinned = {(f["key_id"], f["fingerprint_sha256"]) for f in an.get("fingerprints", [])}
+        pinned_any = set()
     keys = []
     for k in ks.get("keys", []):
         if k.get("status") != "ACTIVE" or k.get("algorithm") != "ECDSA_P256_SHA256":
             continue
         point = bytes.fromhex(k["public_key_hex"])
         fp = sha256_bytes(SPKI_PREFIX_P256 + point)
-        if fp != k.get("fingerprint_sha256") or (k["key_id"], fp) not in pinned:
+        if fp != k.get("fingerprint_sha256"):
+            continue
+        if (pinned is not None and (k["key_id"], fp) not in pinned) or (pinned is None and fp not in pinned_any):
             continue
         keys.append({"key_id": k["key_id"], "point": point, "fingerprint": fp})
     return keys
@@ -174,7 +186,7 @@ def verify_attestation(att_path: str, image_digest: str, key_set: str, anchor: s
 
 
 def verify_detached(manifest_bytes: bytes, sig_path: str | None, key_set: str | None, anchor: str | None,
-                    test_public_key: str | None, allow_test_key: bool) -> str:
+                    test_public_key: str | None, allow_test_key: bool, pinned_fps: list[str] | None = None) -> str:
     """Returns the key id that verified, or raises Refusal. Never returns without a verification."""
     if not sig_path or not os.path.exists(sig_path) or os.path.getsize(sig_path) == 0:
         raise Refusal("UNSIGNED: no detached signature for the manifest")
@@ -198,9 +210,9 @@ def verify_detached(manifest_bytes: bytes, sig_path: str | None, key_set: str | 
         except InvalidSignature:
             raise Refusal("SIGNATURE_INVALID: the manifest does not verify against the test key (tampered or wrong key)")
         return "TEST-ONLY-ed25519"
-    if not key_set or not anchor:
-        raise Refusal("NO_TRUST_ROOT: --key-set and --trust-anchor are required")
-    keys = trusted_release_keys(key_set, anchor)
+    if not key_set or not (anchor or pinned_fps):
+        raise Refusal("NO_TRUST_ROOT: --key-set and --trust-anchor or --pinned-fingerprint are required")
+    keys = trusted_release_keys(key_set, anchor, pinned_fps)
     if not keys:
         raise Refusal("NO_TRUSTED_KEY: no ACTIVE key in the key set matches the pinned trust anchor")
     if _crypto() is None and shutil.which("cosign"):
@@ -502,7 +514,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     data = open(args.manifest, "rb").read()
-    kid = verify_detached(data, args.sig, args.key_set, args.trust_anchor, args.test_public_key, args.allow_test_key)
+    kid = verify_detached(data, args.sig, args.key_set, args.trust_anchor, args.test_public_key, args.allow_test_key, args.pinned_fingerprint)
     out(f"SIGNATURE=VERIFIED key={kid} manifest_sha256={sha256_bytes(data)}")
     m = json.loads(data)
     errs = lint_manifest(m)
@@ -1113,7 +1125,7 @@ def cmd_verify_install(args: argparse.Namespace) -> int:
     data = open(args.manifest, "rb").read()
     kid = None
     try:
-        kid = verify_detached(data, args.sig, args.key_set, args.trust_anchor, args.test_public_key, args.allow_test_key)
+        kid = verify_detached(data, args.sig, args.key_set, args.trust_anchor, args.test_public_key, args.allow_test_key, args.pinned_fingerprint)
     except Refusal as r:
         out(f"NOTE signature: {r}")
     m = json.loads(data)
@@ -1309,6 +1321,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--trust-anchor")
         p.add_argument("--test-public-key")
         p.add_argument("--allow-test-key", action="store_true")
+        p.add_argument("--pinned-fingerprint", action="append",
+                       help="SPKI sha256 of a trusted release key, obtained OUT OF BAND (repeatable); replaces --trust-anchor")
 
     v = sp.add_parser("verify")
     v.add_argument("--manifest", required=True)

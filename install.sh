@@ -31,7 +31,10 @@ TOOL="release/release-manifest.py"
 MAN="release-manifest.json"
 SIG="release-manifest.json.sig"
 CONTRACT="release/config-contract.json"
-TRUST=(--key-set release/trust/release-key-set.json --trust-anchor release/trust/release-trust-anchor.json)
+# The release key is trusted ONLY by a fingerprint the customer obtained OUT OF BAND (IntentGate
+# onboarding). A trust anchor inside the bundle would be circular: whoever can replace the bundle
+# could replace the anchor too.
+FP="${INTENTGATE_RELEASE_KEY_FINGERPRINT:-}"
 
 if [ -t 1 ]; then B=$'\033[1m'; G=$'\033[32m'; R=$'\033[31m'; Y=$'\033[33m'; Z=$'\033[0m'; else B=""; G=""; R=""; Y=""; Z=""; fi
 say()  { printf '%s%s%s\n' "$B" "$*" "$Z"; }
@@ -50,6 +53,9 @@ python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' || die
 ok "docker, docker compose and python3 are available."
 
 say "Step 2 of 6  Verifying the signed release manifest"
+[[ "$FP" =~ ^[0-9a-f]{64}$ ]] || die "Set INTENTGATE_RELEASE_KEY_FINGERPRINT to the IntentGate release-key fingerprint (64 hex)
+     you received from IntentGate out of band. It is deliberately NOT taken from this folder."
+TRUST=(--key-set release/trust/release-key-set.json --pinned-fingerprint "$FP")
 [ -f "$MAN" ] || die "$MAN is missing: this folder is not a release bundle."
 [ -s "$SIG" ] || die "$SIG is missing: an unsigned manifest is never installed."
 REQ=(--require-releasable)

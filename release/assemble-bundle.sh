@@ -49,5 +49,5 @@ python3 "$TOOL" render-helm-values --manifest "$OUT/release-manifest.json" --con
 python3 "$TOOL" verify-bundle --manifest "$OUT/release-manifest.json" --bundle-dir "$OUT"
 SUMS=$(mktemp)
 ( cd "$OUT" && find . -type f ! -name CHECKSUMS -print0 | sort -z | xargs -0 sha256sum ) > "$SUMS"
-mv "$SUMS" "$OUT/CHECKSUMS"
+mv "$SUMS" "$OUT/CHECKSUMS"; chmod 644 "$OUT/CHECKSUMS"
 echo "BUNDLE_READY $OUT"

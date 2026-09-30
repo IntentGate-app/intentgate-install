@@ -4,7 +4,7 @@ This folder is an IntentGate **release bundle**. It installs exactly one signed 
 
 ## What the installer guarantees
 
-1. **Signature.** The manifest's detached signature (`release-manifest.json.sig`) verifies against the pinned IntentGate release key (`release/trust/`). An unsigned, tampered or wrongly signed manifest is refused.
+1. **Signature.** The manifest's detached signature (`release-manifest.json.sig`) must verify against the IntentGate release key whose fingerprint **you pin out of band**: set `INTENTGATE_RELEASE_KEY_FINGERPRINT` to the value IntentGate gives you at onboarding. The fingerprint is never taken from this folder, because a trust root inside the bundle it verifies proves nothing. An unsigned, tampered or wrongly signed manifest is refused.
 2. **Releasability.** The manifest must be customer-releasable. `releasable` is computed from the evidence and cannot be set by hand.
 3. **Exact bundle.** Every file is the one the manifest hashes. `docker-compose.yml` must be the manifest's render. A file that is not part of the bundle (a stray copy, an archive, a nested clone) stops the install.
 4. **Configuration contract.** `release/config-contract.json` lists every key: whether it is required, whether it is secret, how it is generated and how it is validated. Generated secrets are created once with a cryptographic RNG. A missing or invalid required key stops the install. Only key names are ever printed.
@@ -22,7 +22,7 @@ This folder is an IntentGate **release bundle**. It installs exactly one signed 
 Linux / macOS:
 
 ```sh
-./install.sh
+INTENTGATE_RELEASE_KEY_FINGERPRINT=<fingerprint from IntentGate> ./install.sh
 ```
 
 Windows (PowerShell):
