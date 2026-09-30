@@ -26,6 +26,13 @@ function OK($m)   { Write-Host "  OK " -ForegroundColor Green -NoNewline; Write-
 function Die($m)  { Write-Host "  X  " -ForegroundColor Red -NoNewline; Write-Host $m; exit 1 }
 function Py { & $script:Python @args | Out-Host; return $LASTEXITCODE }
 
+# Compose interpolation prefers the process environment over .env: remove every contract key and every
+# INTENTGATE_UNRESOLVED_* variable from this process so only the validated .env decides what runs.
+$contractKeys = @()
+if (Test-Path "release/config-contract.json") { $contractKeys = (Get-Content "release/config-contract.json" -Raw | ConvertFrom-Json).keys | ForEach-Object { $_.name } }
+Get-ChildItem Env: | Where-Object { $_.Name -like "INTENTGATE_UNRESOLVED_*" -or $contractKeys -contains $_.Name } |
+  ForEach-Object { Remove-Item -Path ("Env:" + $_.Name) }
+
 Say "IntentGate installer"
 
 Say "Step 1 of 6  Prerequisites"
@@ -66,6 +73,9 @@ if ((Py $Tool config-validate --contract $Contract --env .env --scope compose) -
 OK "Configuration satisfies the contract."
 
 Say "Step 5 of 6  Pulling images by digest"
+foreach ($line in (& $script:Python $Tool image-refs --kind compose --file docker-compose.yml)) {
+  if ($line -notmatch "@sha256:[0-9a-f]{64}$") { Die "Image $line is not pinned by digest (refusing before any pull)." }
+}
 docker compose pull
 if ($LASTEXITCODE -ne 0) { Die "Could not pull the images (private registry: docker login ghcr.io). There is no tag fallback." }
 $refs = & $script:Python $Tool image-refs --kind compose --file docker-compose.yml

@@ -42,6 +42,14 @@ ok()   { printf '%s  OK%s %s\n' "$G" "$Z" "$*"; }
 info() { printf '     %s\n' "$*"; }
 die()  { printf '%s  X%s %s\n' "$R" "$Z" "$*" >&2; exit 1; }
 
+# Compose interpolation prefers the SHELL environment over .env. Every compose call therefore runs with
+# a scrubbed environment, so nothing but the validated .env (and the manifest's render) decides what runs:
+# an exported INTENTGATE_UNRESOLVED_*=<tagged image> or a contract key cannot bypass verification.
+dc() {
+  env -i PATH="$PATH" HOME="$HOME" ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} ${DOCKER_CONFIG:+DOCKER_CONFIG="$DOCKER_CONFIG"} \
+    ${DOCKER_CONTEXT:+DOCKER_CONTEXT="$DOCKER_CONTEXT"} docker compose "$@"
+}
+
 say "IntentGate installer"
 
 say "Step 1 of 6  Prerequisites"
@@ -87,7 +95,10 @@ fi
 ok "Configuration satisfies the contract."
 
 say "Step 5 of 6  Pulling images by digest"
-if ! docker compose pull; then
+while IFS= read -r line; do
+  case "${line#*=}" in *@sha256:*) ;; *) die "Image ${line#*=} is not pinned by digest (refusing before any pull).";; esac
+done < <(python3 "$TOOL" image-refs --kind compose --file docker-compose.yml)
+if ! dc pull; then
   die "Could not pull the IntentGate images. They are private: log in once with
        docker login ghcr.io -u <user>   (token with read:packages)
      and run ./install.sh again. Images are pulled only by digest; there is no tag fallback."
@@ -102,10 +113,10 @@ done < <(python3 "$TOOL" image-refs --kind compose --file docker-compose.yml)
 ok "Every image is present locally with exactly the manifest's digest."
 
 say "Step 6 of 6  Starting and verifying the running product"
-docker compose up -d
+dc up -d
 deadline=$(( $(date +%s) + ${INTENTGATE_HEALTH_TIMEOUT_S:-300} ))
 while :; do
-  unhealthy=$(docker compose ps --format '{{.Service}} {{.Health}} {{.State}}' | awk '$2=="starting"||$2=="unhealthy"||$3!="running"{print $1}')
+  unhealthy=$(dc ps --format '{{.Service}} {{.Health}} {{.State}}' | awk '$2=="starting"||$2=="unhealthy"||$3!="running"{print $1}')
   [ -z "$unhealthy" ] && break
   [ "$(date +%s)" -lt "$deadline" ] || die "Services not healthy in time: $unhealthy (docker compose logs <service>)"
   sleep 3
