@@ -2,27 +2,17 @@
   "inputs_version": "igrm-inputs/1",
   "release_id": "intentgate-2026.09.30-rc0",
   "created_at": "2026-09-30T00:00:00Z",
-  "_comment": "Component truth recovered from evidence only (lab repo f6a5507, platform repo 97178b8, console-pro ledger a6aff84, gateway 3acd0c4). Nothing here is an acceptance decision; status values are copied from the evidence named in status_evidence. releasable is NEVER an input: release-manifest.py computes it.",
+  "_comment": "Component truth recovered from evidence only (lab repo f6a5507, platform repo 97178b8, console-pro ledger a6aff84, gateway 3acd0c4). Nothing here is an acceptance decision; status values are copied from the evidence named in status_evidence. releasable is NEVER an input: release-manifest.py computes it. 2026-10-01: component_class (runtime|distributable) added; SDKs added as distributables at their LKG-WAVE4 anchors; D1 (SDKs, extractor), D5, D6 ruled by the owner (owner_rulings).",
   "open_owner_decisions": [
     {
       "id": "D1",
-      "summary": "Product boundary: SDKs, Authority Portal (portal/, no repository) and extractor inclusion are not ruled",
-      "evidence": "claude/LKG-PRODUCT-PROTECTION-MATRIX-2026-09-30.md \u00a74"
+      "summary": "Product boundary: the Authority Portal (portal/, no repository) is not ruled (SDKs and extractor were ruled 2026-10-01, see owner_rulings)",
+      "evidence": "claude/LKG-PRODUCT-PROTECTION-MATRIX-2026-09-30.md \u00a74; claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md \u00a71"
     },
     {
       "id": "D3",
       "summary": "Acceptance of platform and gateway baselines (no accepted anchor for the running platform 97178b8, worker 39ef75af, gateway 3acd0c4)",
       "evidence": "claude/LKG-PRODUCT-PROTECTION-MATRIX-2026-09-30.md \u00a74"
-    },
-    {
-      "id": "D5",
-      "summary": "Clean-room identity: local test IdP fixture vs dedicated Entra test tenant",
-      "evidence": "claude/LKG-CLEAN-ROOM-RELEASE-ACCEPTANCE-2026-09-30.md \u00a75"
-    },
-    {
-      "id": "D6",
-      "summary": "Distribution: offline image archives vs customer registry credential (GHCR images are private)",
-      "evidence": "claude/LKG-CLEAN-ROOM-RELEASE-ACCEPTANCE-2026-09-30.md \u00a75"
     }
   ],
   "components": [
@@ -77,7 +67,8 @@
       "schema_owner": {
         "ddl_mechanism": "lazy idempotent CREATE ... IF NOT EXISTS on first DB use (lib/scim/db.ts and ~12 stores)",
         "migration_level": null
-      }
+      },
+      "component_class": "runtime"
     },
     {
       "name": "platform-gateway",
@@ -133,7 +124,8 @@
       "schema_owner": {
         "ddl_mechanism": "idempotent DDL at start (bootstrap.ts); numbered SQL 0001-0005 have no runner; falls back to in-memory stores if schema-ensure fails",
         "migration_level": null
-      }
+      },
+      "component_class": "runtime"
     },
     {
       "name": "governance-worker",
@@ -189,7 +181,8 @@
       "schema_owner": {
         "ddl_mechanism": "idempotent ensureGovernanceRunsSchema at start",
         "migration_level": null
-      }
+      },
+      "component_class": "runtime"
     },
     {
       "name": "gateway",
@@ -246,12 +239,13 @@
       "schema_owner": {
         "ddl_mechanism": "idempotent DDL at start from embedded schema.sql; destructive DROP/re-ADD constraint pairs on every boot",
         "migration_level": null
-      }
+      },
+      "component_class": "runtime"
     },
     {
       "name": "extractor",
       "kind": "first-party",
-      "role": "intent extractor (gateway runtime dependency)",
+      "role": "intent extractor (gateway runtime dependency: intent stage + task-binding plan; REQUIRE_INTENT=true fails closed without it)",
       "source": {
         "repository": "https://github.com/IntentGate-app/intentgate-extractor",
         "commit": null,
@@ -285,7 +279,8 @@
         "depends_on": [],
         "replicas": 1
       },
-      "schema_owner": null
+      "schema_owner": null,
+      "component_class": "runtime"
     },
     {
       "name": "postgres",
@@ -328,7 +323,94 @@
           "mount": "/var/lib/postgresql/data"
         }
       },
-      "schema_owner": null
+      "schema_owner": null,
+      "component_class": "runtime"
+    },
+    {
+      "name": "sdk-python",
+      "kind": "first-party",
+      "component_class": "distributable",
+      "role": "distributable client SDK (pypi intentgate); not installed, pulled or run by the installer or the chart",
+      "source": {
+        "repository": "https://github.com/IntentGate-app/intentgate-sdk-python",
+        "commit": "3d1bb772b495fa99045e715dea8cf39a06ec1104",
+        "ref": "refs/tags/LKG-WAVE4-2026-09-24"
+      },
+      "status": "ACCEPTED",
+      "status_evidence": "LKG-WAVE4-2026-09-24 -> sdk-python 3d1bb77 (lab@f6a5507:docs/WAVE-4-CEREMONY.md:14 (BASELINE) and :122-123 remote tag verification MATCH; claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md \u00a72 ACCEPTED_ANCHOR); HEAD 52a7992 = anchor + 2 untagged CI/release-workflow commits (UNACCEPTED_PENDING_OWNER), package contents identical",
+      "accepted_anchor": {
+        "kind": "tag",
+        "tag": "LKG-WAVE4-2026-09-24",
+        "commit": "3d1bb772b495fa99045e715dea8cf39a06ec1104",
+        "evidence": "LKG-WAVE4-2026-09-24 -> sdk-python 3d1bb77 (lab@f6a5507:docs/WAVE-4-CEREMONY.md:14 (BASELINE) and :122-123 remote tag verification MATCH; claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md \u00a72 ACCEPTED_ANCHOR); HEAD 52a7992 = anchor + 2 untagged CI/release-workflow commits (UNACCEPTED_PENDING_OWNER), package contents identical"
+      },
+      "image": null,
+      "runtime": null,
+      "schema_owner": null,
+      "distributable": {
+        "ecosystem": "pypi",
+        "package_name": "intentgate",
+        "version": "0.3.0",
+        "version_tag": "v0.3.0",
+        "version_tag_commit": "320466579d9f790d5176333a1d25f0c12169c2be",
+        "artifacts": [
+          {
+            "filename": "intentgate-0.3.0-py3-none-any.whl",
+            "sha256": "acab59b30967e706faa99af8ca869c5c37daa56ae3cc70548a71f4fcf6685228"
+          },
+          {
+            "filename": "intentgate-0.3.0.tar.gz",
+            "sha256": "c509c18944b91c37472875515167413c5ab959a9ca23b9514db880ddf1080215"
+          }
+        ],
+        "artifact_digest_kind": "local-reproducible-measurement",
+        "artifact_digest_source": "measured 2026-10-01 in the cloud workspace: git archive 3d1bb77 | python -m build (build 1.6.1, hatchling 1.32.4 resolved at build time, CPython 3.11.15), SOURCE_DATE_EPOCH=commit time; two independent builds byte-identical. NOT the governed release build and NOT the artifact published to PyPI as 0.3.0 (that was released from v0.3.0 = 3204665)"
+      },
+      "attribution": null,
+      "attribution_source": "none: no signed build record exists for a package built from the accepted anchor commit",
+      "sbom": null,
+      "provenance_attestation": null
+    },
+    {
+      "name": "sdk-typescript",
+      "kind": "first-party",
+      "component_class": "distributable",
+      "role": "distributable client SDK (npm @intentgate-app/intentgate); not installed, pulled or run by the installer or the chart",
+      "source": {
+        "repository": "https://github.com/IntentGate-app/intentgate-sdk-typescript",
+        "commit": "7f3e0c221a2d1f788711af976e7c0d3bf466d4c5",
+        "ref": "refs/tags/LKG-WAVE4-2026-09-24"
+      },
+      "status": "ACCEPTED",
+      "status_evidence": "LKG-WAVE4-2026-09-24 -> sdk-typescript 7f3e0c2 (lab@f6a5507:docs/WAVE-4-CEREMONY.md:14 (BASELINE) and :122-123 remote tag verification MATCH; claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md \u00a72 ACCEPTED_ANCHOR); HEAD bf20f6c = anchor + 2 untagged CI/release-workflow commits (UNACCEPTED_PENDING_OWNER), package contents identical",
+      "accepted_anchor": {
+        "kind": "tag",
+        "tag": "LKG-WAVE4-2026-09-24",
+        "commit": "7f3e0c221a2d1f788711af976e7c0d3bf466d4c5",
+        "evidence": "LKG-WAVE4-2026-09-24 -> sdk-typescript 7f3e0c2 (lab@f6a5507:docs/WAVE-4-CEREMONY.md:14 (BASELINE) and :122-123 remote tag verification MATCH; claude/LKG-PRODUCT-EVIDENCE-FINDINGS-2026-09-30.md \u00a72 ACCEPTED_ANCHOR); HEAD bf20f6c = anchor + 2 untagged CI/release-workflow commits (UNACCEPTED_PENDING_OWNER), package contents identical"
+      },
+      "image": null,
+      "runtime": null,
+      "schema_owner": null,
+      "distributable": {
+        "ecosystem": "npm",
+        "package_name": "@intentgate-app/intentgate",
+        "version": "0.3.2",
+        "version_tag": "v0.3.2",
+        "version_tag_commit": "a1d19992f8b6c15d76d14a97de654e032d0635d0",
+        "artifacts": [
+          {
+            "filename": "intentgate-app-intentgate-0.3.2.tgz",
+            "sha256": "12bd216c59d7baf431c8bbb05def270bd317bdfed9fac7840a0d7eab15b18d35"
+          }
+        ],
+        "artifact_digest_kind": "local-reproducible-measurement",
+        "artifact_digest_source": "measured 2026-10-01 in the cloud workspace: git archive 7f3e0c2 | npm ci --ignore-scripts && npm run build && npm pack (node 22.22.2, npm 10.9.7, lockfile versions); two independent builds byte-identical (also identical from bf20f6c). NOT the governed release build and NOT the tarball published to npm as 0.3.2 (released from v0.3.2 = a1d1999)"
+      },
+      "attribution": null,
+      "attribution_source": "none: no signed build record exists for a package built from the accepted anchor commit",
+      "sbom": null,
+      "provenance_attestation": null
     }
   ],
   "schema": {
@@ -342,5 +424,37 @@
       "evidence": "IntentGate-app/intentgate-lab@f6a5507:docs/LKG-ROLLBACK-VERIFICATION-2026-09-30/restored-state-capture-1.txt",
       "note": "SUPPORTING ONLY. The Lab database carries Lab-only tables and history; a clean install is not expected to equal it and this value is never used as the expected fingerprint."
     }
-  }
+  },
+  "owner_rulings": [
+    {
+      "id": "D1-SDK",
+      "date": "2026-10-01",
+      "ruling": "SDKs: IN the product boundary when required by customers/integrations, but distinguish distributable SDK artifacts from runtime-required components in the canonical release manifest.",
+      "applied": "component_class=distributable for sdk-python and sdk-typescript (no image, no runtime; never rendered into Compose/Helm); release-manifest.py PRODUCT_BOUNDARY + _check_class"
+    },
+    {
+      "id": "D1-EXTRACTOR",
+      "date": "2026-10-01",
+      "ruling": "Extractor: IN the product boundary if any supported IntentGate capability depends on it. Determine this from actual dependency evidence rather than packaging assumptions.",
+      "applied": "IN, component_class=runtime, required: gateway intent stage and task binding depend on it (evidence in PRODUCT_BOUNDARY['extractor'] and design/RELEASE-BOUNDARY-IDENTITY-REGISTRY-2026-10-01.md \u00a73)"
+    },
+    {
+      "id": "D5",
+      "date": "2026-10-01",
+      "ruling": "Use an isolated test identity mechanism appropriate to clean-room acceptance; do not depend on Joe's personal interactive account. Prefer an isolated Entra test tenant/app if the production authentication contract requires Entra. Do not weaken production authentication merely to automate installation testing.",
+      "applied": "the contract requires Entra (ODR-R1-002 CANONICAL_OPERATOR = tid + oid): an isolated Entra test tenant; design \u00a75. The clean room stays RED until the owner provisions it."
+    },
+    {
+      "id": "D6",
+      "date": "2026-10-01",
+      "ruling": "Support both authenticated registry installation and an offline/air-gapped image bundle eventually. Both must resolve the same signed canonical release manifest and identical digests. Do not make `latest` valid in either path.",
+      "applied": "pull-plan / verify-image-refs (registry) and assemble-image-bundle / verify-image-bundle igib/1 (offline); design \u00a76"
+    },
+    {
+      "id": "DEV-SUBJECT-OVERRIDE",
+      "date": "2026-10-01",
+      "ruling": "If configured in a way that attributes automated calls to EUID-HUM-000001, classify RELEASE-BLOCKING and prepare the narrow correction. Do not deploy it.",
+      "applied": "the override is removed from the release config surface and refused by build, render, config-validate, verify-bundle, guard-release-input, verify-install and the chart"
+    }
+  ]
 }

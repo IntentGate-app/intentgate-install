@@ -32,6 +32,10 @@ Subcommands
   capture-state         lkg-lab-state/1 lines for an install (for lkg-rollback-equivalence.sh state)
   guard-release-input   refuse stale/untracked artifacts, nested clones, archives, mutable refs
   image-refs            print component=repository@digest for a rendered compose or helm manifest
+  pull-plan             registry path: repository@digest per runtime component (optional mirror re-homing)
+  verify-image-refs     refuse resolved image refs that are tags, latest, other digests, unmanifested or missing
+  assemble-image-bundle offline path: igib/1 OCI image layout selected BY DIGEST (+ signed manifest), optional tar
+  verify-image-bundle   offline path: signature, bundled manifest == release manifest, index == manifest, blob sha256
 
 Exit codes: 0 PASS, 1 FAIL (a verdict), 2 usage / missing input.
 """
@@ -62,9 +66,82 @@ MUTABLE_TEXT_RE = re.compile(r"(:-latest\}|:latest\b|\"latest\"|'latest')")
 IMAGE_LINE_RE = re.compile(r"^[ \t]*(?:-[ \t]*)?image:[ \t]*[\"']?([^\"'\s#]+)", re.M)  # never crosses a line: `image:` as a map key is not a ref
 UNRESOLVED_PREFIX = "${INTENTGATE_UNRESOLVED_"
 
-REQUIRED_COMPONENTS = ["console-pro", "platform-gateway", "governance-worker", "gateway", "extractor", "postgres"]
-COMPONENT_ORDER = ["postgres", "extractor", "platform-gateway", "governance-worker", "gateway", "console-pro"]
 STATUSES = {"ACCEPTED", "PROVISIONAL", "UNACCEPTED", "THIRD_PARTY"}
+
+# THE PRODUCT BOUNDARY, from dependency evidence (never from repository names or packaging habits).
+#   runtime        an image the installed product runs; Compose and Helm render it, by digest, and the install
+#                  chain (IMAGES_BY_DIGEST, RUNNING_REVISIONS) measures it.
+#   distributable  a package customers/integrations consume (PyPI / npm). Identity = package name + version +
+#                  source commit + sha256 of the built artifact(s). It has NO image and NO runtime: the installer
+#                  and the chart never require, pull or run it.
+# A component that is not listed here is outside the evidenced boundary and is refused; a component declared in
+# the other class is refused (owner decisions 2026-10-01; design/RELEASE-BOUNDARY-IDENTITY-REGISTRY-2026-10-01.md).
+PRODUCT_BOUNDARY: dict[str, dict[str, Any]] = {
+    "postgres": {"class": "runtime", "required": True,
+                 "evidence": "shared product database: INTENTGATE_POSTGRES_URL is REQUIRED by gateway, platform-gateway, governance-worker, console-pro (config-contract.json wiring)"},
+    "extractor": {"class": "runtime", "required": True,
+                  "evidence": "IN (runtime), measured 2026-10-01 on gateway@3acd0c4: cmd/gateway/main.go:372 reads INTENTGATE_EXTRACTOR_URL, "
+                              "main.go:548 extractor.New -> internal/extractor/client.go POST <url>/v1/extract; internal/handlers/mcp.go:562 runs the "
+                              "intent stage on every north-south /v1/mcp tools/call, mcp.go:2080-2087 refuse when the header is missing or no extractor "
+                              "is configured while INTENTGATE_REQUIRE_INTENT=true, mcp.go:2095-2098 fail closed when the extractor errors; mcp.go:588 "
+                              "task binding (goal-drift) takes its declared plan from the extractor's allowed_tools. The release wiring sets "
+                              "INTENTGATE_REQUIRE_INTENT=true, INTENTGATE_TASK_BINDING=true, INTENTGATE_EXTRACTOR_URL=http://extractor:8090 "
+                              "(config-contract.json), as the Lab does (lab@f6a5507 compose.yml:137-158). Callers: sdk-python client.py:275-276 and "
+                              "sdk-typescript client.ts:282-283 send X-Intent-Prompt; console-pro@416efb1 lib/lab-demo.ts:114."},
+    "platform-gateway": {"class": "runtime", "required": True,
+                         "evidence": "console-pro INTENTGATE_PLATFORM_GATEWAY_URL and gateway INTENTGATE_DISCOVERY_*_URL target it (config-contract.json wiring)"},
+    "governance-worker": {"class": "runtime", "required": True,
+                          "evidence": "governed run substrate; consumes GOVERNANCE_DATABASE_URL (config-contract.json wiring)"},
+    "gateway": {"class": "runtime", "required": True,
+                "evidence": "the policy enforcement point; console-pro INTENTGATE_GATEWAY_URL=http://gateway:8080 (config-contract.json wiring)"},
+    "console-pro": {"class": "runtime", "required": True,
+                    "evidence": "operator console; the only operator sign-in surface (AUTH_OIDC_* REQUIRED, config-contract.json)"},
+    "sdk-python": {"class": "distributable", "required": False,
+                   "evidence": "PyPI package 'intentgate' (pyproject.toml). No runtime component imports it: console-pro@416efb1, platform@97178b8, "
+                               "gateway@3acd0c4 carry no dependency on it; lab uses it only in test workflows (lab@f6a5507 .github/workflows/lab-self-proofs.yml:153)"},
+    "sdk-typescript": {"class": "distributable", "required": False,
+                       "evidence": "npm package '@intentgate-app/intentgate' (package.json). No runtime component depends on it: console-pro@416efb1 package.json, "
+                                   "platform@97178b8 package.json files carry no dependency on it; lab uses it only in test workflows (lab@f6a5507 lab-self-proofs.yml:161)"},
+}
+COMPONENT_CLASSES = {"runtime", "distributable"}
+REQUIRED_COMPONENTS = [n for n, b in PRODUCT_BOUNDARY.items() if b["required"]]
+COMPONENT_ORDER = ["postgres", "extractor", "platform-gateway", "governance-worker", "gateway", "console-pro"]
+DISTRIBUTABLE_ECOSYSTEMS = {"pypi", "npm"}
+VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+([.+-][0-9A-Za-z.+-]+)?$")
+HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+
+# HUMAN IMPERSONATION OVERRIDES (owner decision 2026-10-01, RELEASE-BLOCKING). The platform gateway's dev authenticator
+# takes principal.subject from GATEWAY_DEV_SUBJECT (platform 3ea2b27, `process.env.GATEWAY_DEV_SUBJECT ?? 'dev-principal'`);
+# set to a human's idp URN uuid it attributes EVERY bearer (automated) call to that human. No canonical release may wire,
+# accept or run with either name, whatever the value (an EMPTY value is not nullish: subject would become ""). These names
+# are fixed here, not only in the contract, so a contract that drops them from its forbidden list is still refused.
+HUMAN_IMPERSONATION_ENV = {
+    "GATEWAY_DEV_SUBJECT": "platform dev-authenticator subject override: attributes every automated bearer call to one principal (e.g. a human's idp URN)",
+    "INTENTGATE_PLATFORM_GATEWAY_SUBJECT": "release config key that fed GATEWAY_DEV_SUBJECT (human-impersonation override for automated calls)",
+}
+IMPERSONATION_TEXT_RE = re.compile(r"\b(GATEWAY_DEV_SUBJECT|INTENTGATE_PLATFORM_GATEWAY_SUBJECT)\s*[:=]|name:[ \t]*[\"']?(GATEWAY_DEV_SUBJECT|INTENTGATE_PLATFORM_GATEWAY_SUBJECT)\b")
+
+
+def runtime_components(m: dict[str, Any]) -> list[dict[str, Any]]:
+    return [c for c in m.get("components", []) if c.get("component_class") == "runtime"]
+
+
+def check_contract(contract: dict[str, Any]) -> list[str]:
+    """Refusals for a configuration contract that would expose a human-impersonation override."""
+    e: list[str] = []
+    forbidden = {f["name"] for f in contract.get("forbidden_keys", [])}
+    for name, why in HUMAN_IMPERSONATION_ENV.items():
+        if any(k["name"] == name for k in contract.get("keys", [])):
+            e.append(f"HUMAN_IMPERSONATION_OVERRIDE: contract declares key {name} ({why})")
+        if name not in forbidden:
+            e.append(f"HUMAN_IMPERSONATION_OVERRIDE: contract does not list {name} in forbidden_keys")
+    for comp, wiring in contract.get("wiring", {}).items():
+        for env, src in wiring.items():
+            if env in HUMAN_IMPERSONATION_ENV:
+                e.append(f"HUMAN_IMPERSONATION_OVERRIDE: {comp} wires {env} ({HUMAN_IMPERSONATION_ENV[env]})")
+            if isinstance(src, dict) and src.get("key") in HUMAN_IMPERSONATION_ENV:
+                e.append(f"HUMAN_IMPERSONATION_OVERRIDE: {comp}.{env} is fed from {src['key']}")
+    return e
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -163,16 +240,19 @@ def dsse_pae(payload_type: str, payload: bytes) -> bytes:
     return b"DSSEv1 %d %s %d %s" % (len(t), t, len(payload), payload)
 
 
-def verify_attestation(att_path: str, image_digest: str, key_set: str, anchor: str) -> dict[str, Any]:
+def verify_attestation(att_path: str, image_digest: str | list[str], key_set: str, anchor: str) -> dict[str, Any]:
+    """image_digest: the image digest, or (distributables) the list of artifact digests; the statement's subjects
+    must be exactly that set."""
+    want = sorted([image_digest] if isinstance(image_digest, str) else image_digest)
     env = load_json(att_path)
     payload = base64.b64decode(env["payload"])
     stmt = json.loads(payload)
-    subjects = [s.get("digest", {}).get("sha256") for s in stmt.get("subject", [])]
-    subject_ok = ("sha256:" + subjects[0]) == image_digest if len(subjects) == 1 else False
-    result = {"subject_digest": ("sha256:" + subjects[0]) if subjects else None,
+    subjects = sorted("sha256:" + str(s.get("digest", {}).get("sha256")) for s in stmt.get("subject", []))
+    subject_ok = bool(subjects) and subjects == want
+    result = {"subject_digest": (subjects[0] if len(subjects) == 1 else ",".join(subjects)) if subjects else None,
               "predicate_type": stmt.get("predicateType"), "signature": "UNVERIFIED", "key_id": None}
     if not subject_ok:
-        raise Refusal(f"ATTESTATION_SUBJECT_MISMATCH: {att_path} attests {result['subject_digest']}, manifest digest is {image_digest}")
+        raise Refusal(f"ATTESTATION_SUBJECT_MISMATCH: {att_path} attests {result['subject_digest']}, manifest digest is {','.join(want)}")
     if _crypto() is None or not (os.path.exists(key_set) and os.path.exists(anchor)):
         return result
     pae = dsse_pae(env["payloadType"], payload)
@@ -269,11 +349,20 @@ def _load_attribution(base: str, rel: str, comp: dict[str, Any]) -> dict[str, An
     if rec.get("record_version") != "IGBA/1":
         raise Refusal(f"ATTRIBUTION_FORMAT: {comp['name']}: {rel} is not IGBA/1")
     art, src = rec.get("artifact", {}), rec.get("source", {})
-    img = comp["image"]
-    if art.get("digest") != img.get("digest"):
-        raise Refusal(f"ATTRIBUTION_DIGEST_MISMATCH: {comp['name']}: record attests {art.get('digest')}, component digest is {img.get('digest')}")
-    if art.get("registry_ref") != img.get("repository"):
-        raise Refusal(f"ATTRIBUTION_REPOSITORY_MISMATCH: {comp['name']}: record names {art.get('registry_ref')}")
+    if comp.get("component_class") == "distributable":
+        d = comp["distributable"]
+        want = sorted("sha256:" + a["sha256"] for a in d.get("artifacts", []))
+        got = sorted(art.get("digests") or ([art["digest"]] if art.get("digest") else []))
+        if got != want:
+            raise Refusal(f"ATTRIBUTION_DIGEST_MISMATCH: {comp['name']}: record attests {got}, package artifacts are {want}")
+        if art.get("registry_ref") != f"{d['ecosystem']}:{d['package_name']}":
+            raise Refusal(f"ATTRIBUTION_REPOSITORY_MISMATCH: {comp['name']}: record names {art.get('registry_ref')}")
+    else:
+        img = comp["image"]
+        if art.get("digest") != img.get("digest"):
+            raise Refusal(f"ATTRIBUTION_DIGEST_MISMATCH: {comp['name']}: record attests {art.get('digest')}, component digest is {img.get('digest')}")
+        if art.get("registry_ref") != img.get("repository"):
+            raise Refusal(f"ATTRIBUTION_REPOSITORY_MISMATCH: {comp['name']}: record names {art.get('registry_ref')}")
     if src.get("revision") != comp["source"].get("commit"):
         raise Refusal(f"ATTRIBUTION_COMMIT_MISMATCH: {comp['name']}: record was built from {src.get('revision')}, component commit is {comp['source'].get('commit')}")
     return {"format": "IGBA/1", "path": rel, "sha256": sha256_file(p),
@@ -312,10 +401,10 @@ def compute_blockers(m: dict[str, Any]) -> list[dict[str, str]]:
             if match != c.get("source", {}).get("commit"):
                 add(c["name"], "INDEPENDENT_REVIEW_NOT_FOR_THIS_COMMIT",
                     f"reviewed candidate {ir.get('candidate_id')} does not cover {repo}@{str(c.get('source', {}).get('commit'))[:12]}")
-    names = [c["name"] for c in m.get("components", [])]
+    names = [c["name"] for c in runtime_components(m)]
     for r in REQUIRED_COMPONENTS:
         if r not in names:
-            add(r, "REQUIRED_COMPONENT_MISSING", "the canonical product includes this component")
+            add(r, "REQUIRED_COMPONENT_MISSING", f"the canonical product includes this {PRODUCT_BOUNDARY[r]['class']} component")
     sch = m.get("schema", {})
     if not sch.get("expected_fingerprint"):
         add("*", "SCHEMA_FINGERPRINT_UNMEASURED", "no clean-install schema fingerprint has been measured for this component set")
@@ -333,6 +422,9 @@ def compute_blockers(m: dict[str, Any]) -> list[dict[str, str]]:
         st = c.get("status")
         if st != "ACCEPTED":
             add(n, f"STATUS_{st}", c.get("status_evidence", ""))
+        if c.get("component_class") == "distributable":
+            _distributable_blockers(c, add)
+            continue
         src = c.get("source", {})
         if not src.get("commit"):
             add(n, "SOURCE_COMMIT_UNKNOWN", "no source commit is attributable to the image")
@@ -369,17 +461,104 @@ def compute_blockers(m: dict[str, Any]) -> list[dict[str, str]]:
     return b
 
 
+def _distributable_blockers(c: dict[str, Any], add: Any) -> None:
+    """A distributable (SDK) is releasable only as an exactly identified, attested package: source commit, accepted
+    anchor at that commit, a version tag AT that commit (one version = one source), sha256 of every built artifact,
+    a signed build record, an SBOM and a provenance attestation over exactly those artifacts."""
+    n, src, d = c["name"], c.get("source", {}), c.get("distributable") or {}
+    if not src.get("commit"):
+        add(n, "SOURCE_COMMIT_UNKNOWN", "no source commit is attributable to the package")
+    a = c.get("accepted_anchor")
+    if not a:
+        add(n, "NO_ACCEPTED_ANCHOR", "no accepted anchor recovered from evidence")
+    else:
+        if not a.get("tag"):
+            add(n, "ANCHOR_NOT_TAGGED", f"anchor {a.get('kind')} {str(a.get('commit'))[:12]} has no immutable tag")
+        if a.get("commit") != src.get("commit"):
+            add(n, "ANCHOR_COMMIT_MISMATCH", f"anchor {str(a.get('commit'))[:12]} != component {str(src.get('commit'))[:12]}")
+    if not d.get("artifacts"):
+        add(n, "NO_ARTIFACT_DIGEST", "no sha256 of a built package artifact")
+    elif d.get("artifact_digest_kind") != "governed-build":
+        add(n, "ARTIFACT_DIGEST_NOT_GOVERNED", f"artifact digests are a {d.get('artifact_digest_kind')}, not the governed release build's output")
+    if not d.get("version_tag"):
+        add(n, "VERSION_NOT_TAGGED", f"version {d.get('version')} has no release tag")
+    elif d.get("version_tag_commit") != src.get("commit"):
+        add(n, "VERSION_TAG_NOT_AT_COMMIT", f"tag {d.get('version_tag')} is {str(d.get('version_tag_commit'))[:12]}, package source is "
+            f"{str(src.get('commit'))[:12]}: version {d.get('version')} would name two different sources")
+    at = c.get("attribution")
+    if not at:
+        add(n, "NO_ATTRIBUTION", "no signed build record for the package artifacts")
+    else:
+        if at.get("signing_state") != "SIGNED":
+            add(n, "ATTRIBUTION_NOT_SIGNED", f"signing state {at.get('signing_state')}")
+        if at.get("eligibility") != "ELIGIBLE":
+            add(n, "ATTRIBUTION_NOT_ELIGIBLE", f"eligibility {at.get('eligibility')}")
+    if not c.get("sbom"):
+        add(n, "NO_SBOM", "no SBOM bound to the package artifacts")
+    pa = c.get("provenance_attestation")
+    if not pa:
+        add(n, "NO_PROVENANCE_ATTESTATION", "no signed provenance attestation over the package artifacts")
+    elif pa.get("signature") != "VERIFIED":
+        add(n, "ATTESTATION_NOT_VERIFIED", f"attestation signature {pa.get('signature')}")
+
+
+def _check_class(ci: dict[str, Any]) -> None:
+    """Refuse a component outside the evidenced boundary, or declared in the wrong class, or carrying the other class's
+    delivery fields. A distributable can never render into Compose/Helm because it can never carry an image."""
+    n = ci.get("name")
+    b = PRODUCT_BOUNDARY.get(n)
+    if b is None:
+        raise Refusal(f"COMPONENT_OUTSIDE_BOUNDARY: {n}: no dependency evidence classifies this component (PRODUCT_BOUNDARY)")
+    cls = ci.get("component_class")
+    if cls not in COMPONENT_CLASSES:
+        raise Refusal(f"COMPONENT_CLASS_MISSING: {n}: component_class must be one of {sorted(COMPONENT_CLASSES)}")
+    if cls != b["class"]:
+        raise Refusal(f"COMPONENT_CLASS_MISMATCH: {n} is declared {cls}; the evidenced boundary classifies it {b['class']} ({b['evidence'][:160]})")
+    if cls == "runtime":
+        if not isinstance(ci.get("image"), dict) or not isinstance(ci.get("runtime"), dict):
+            raise Refusal(f"RUNTIME_WITHOUT_IMAGE: {n}: a runtime component needs image and runtime")
+        if ci.get("distributable") is not None:
+            raise Refusal(f"RUNTIME_HAS_PACKAGE: {n}: a runtime component carries no distributable package block")
+        return
+    for f in ("image", "runtime", "schema_owner"):
+        if ci.get(f) is not None:
+            raise Refusal(f"DISTRIBUTABLE_HAS_{f.upper()}: {n}: a distributable is never installed, pulled or run by the installer or the chart")
+    d = ci.get("distributable")
+    if not isinstance(d, dict):
+        raise Refusal(f"DISTRIBUTABLE_WITHOUT_PACKAGE: {n}: ecosystem, package_name, version and artifacts are required")
+    if d.get("ecosystem") not in DISTRIBUTABLE_ECOSYSTEMS:
+        raise Refusal(f"DISTRIBUTABLE_ECOSYSTEM: {n}: {d.get('ecosystem')!r}")
+    if not isinstance(d.get("package_name"), str) or not d["package_name"]:
+        raise Refusal(f"DISTRIBUTABLE_PACKAGE_NAME: {n}")
+    if not isinstance(d.get("version"), str) or not VERSION_RE.match(d["version"]):
+        raise Refusal(f"DISTRIBUTABLE_VERSION: {n}: {d.get('version')!r} is not an exact version (a dist-tag or range is never an identity)")
+    for a in d.get("artifacts") or []:
+        if not isinstance(a, dict) or not HEX64_RE.match(str(a.get("sha256"))) or not a.get("filename"):
+            raise Refusal(f"DISTRIBUTABLE_ARTIFACT: {n}: every artifact is {{filename, sha256 (64 hex)}}")
+    if d.get("version_tag_commit") is not None and not COMMIT_RE.match(str(d["version_tag_commit"])):
+        raise Refusal(f"COMMIT_FORMAT: {n}: version_tag_commit must be 40 hex")
+
+
 def build(args: argparse.Namespace) -> int:
     base = os.path.dirname(os.path.dirname(os.path.abspath(args.inputs)))  # release/
     inputs = load_json(args.inputs)
     contract_path = args.contract
     contract = load_json(contract_path)
+    ce = check_contract(contract)
+    if ce:
+        raise Refusal("; ".join(ce))
     key_set = args.key_set or os.path.join(base, "trust", "release-key-set.json")
     anchor = args.trust_anchor or os.path.join(base, "trust", "release-trust-anchor.json")
     comps = []
     for ci in inputs["components"]:
-        c = {k: ci.get(k) for k in ("name", "kind", "role", "source", "status", "status_evidence",
+        _check_class(ci)
+        c = {k: ci.get(k) for k in ("name", "kind", "role", "component_class", "source", "status", "status_evidence",
                                    "accepted_anchor", "image", "runtime", "schema_owner")}
+        c["boundary_evidence"] = PRODUCT_BOUNDARY[c["name"]]["evidence"]
+        if c["component_class"] == "distributable":
+            c["distributable"] = {k: ci["distributable"].get(k) for k in
+                                  ("ecosystem", "package_name", "version", "version_tag", "version_tag_commit",
+                                   "artifacts", "artifact_digest_kind", "artifact_digest_source")}
         if c["status"] not in STATUSES:
             raise Refusal(f"STATUS_UNKNOWN: {c['name']}: {c['status']!r}")
         if c["kind"] == "third-party":
@@ -388,7 +567,8 @@ def build(args: argparse.Namespace) -> int:
                 raise Refusal(f"STATUS_KIND: {c['name']}: third-party components have status THIRD_PARTY")
         elif c["status"] == "THIRD_PARTY":
             raise Refusal(f"STATUS_KIND: {c['name']}: a first-party component cannot be THIRD_PARTY")
-        _check_image(c["name"], c["image"])
+        if c["component_class"] == "runtime":
+            _check_image(c["name"], c["image"])
         commit = c["source"].get("commit")
         if commit is not None and not COMMIT_RE.match(commit):
             raise Refusal(f"COMMIT_FORMAT: {c['name']}: {commit!r} is not a full 40-hex commit")
@@ -421,7 +601,9 @@ def build(args: argparse.Namespace) -> int:
             c["sbom"] = None
         if ci.get("provenance_attestation"):
             ap = os.path.join(base, ci["provenance_attestation"])
-            v = verify_attestation(ap, c["image"]["digest"], key_set, anchor)
+            subject = c["image"]["digest"] if c["component_class"] == "runtime" else \
+                ["sha256:" + a["sha256"] for a in c["distributable"].get("artifacts") or []]
+            v = verify_attestation(ap, subject, key_set, anchor)
             c["provenance_attestation"] = {"path": ci["provenance_attestation"], "sha256": sha256_file(ap), **v}
         else:
             c["provenance_attestation"] = None
@@ -447,12 +629,13 @@ def build(args: argparse.Namespace) -> int:
         "release_id": inputs["release_id"],
         "created_at": inputs["created_at"],
         "product": "IntentGate",
-        "components": sorted(comps, key=lambda c: COMPONENT_ORDER.index(c["name"]) if c["name"] in COMPONENT_ORDER else 99),
+        "components": sorted(comps, key=lambda c: (COMPONENT_ORDER.index(c["name"]) if c["name"] in COMPONENT_ORDER else 99, c["name"])),
         "schema": schema,
         "config_contract": {"path": contract_rel, "sha256": sha256_file(contract_path),
                             "contract_version": contract["contract_version"],
                             "required_keys": sorted(k["name"] for k in contract["keys"] if k["required"])},
         "open_owner_decisions": inputs.get("open_owner_decisions", []),
+        "owner_rulings": inputs.get("owner_rulings", []),
         "independent_review": inputs.get("independent_review"),
         "bundle": {"static": static, "rendered": sorted(bf["rendered"]),
                    "generated_at_install": sorted(bf["generated_at_install"])},
@@ -500,7 +683,9 @@ def lint_manifest(m: dict[str, Any]) -> list[str]:
             e.append(f"DUPLICATE_COMPONENT: {n}")
         names.add(n)
         try:
-            _check_image(n, c.get("image", {}))
+            _check_class(c)
+            if c.get("component_class") == "runtime":
+                _check_image(n, c.get("image", {}))
         except Refusal as r:
             e.append(str(r))
         st = c.get("status")
@@ -603,7 +788,7 @@ def render_compose(m: dict[str, Any], contract: dict[str, Any], msha: str) -> st
          "name: intentgate",
          "",
          "services:"]
-    comps = {c["name"]: c for c in m["components"]}
+    comps = {c["name"]: c for c in runtime_components(m)}  # distributables are never rendered
     volumes = []
     for name in [n for n in COMPONENT_ORDER if n in comps]:
         c = comps[name]
@@ -699,7 +884,7 @@ def _scalar(v: Any) -> str:
 
 def helm_values(m: dict[str, Any], contract: dict[str, Any], msha: str) -> dict[str, Any]:
     keys = _contract_keys(contract)
-    comps = {c["name"]: c for c in m["components"]}
+    comps = {c["name"]: c for c in runtime_components(m)}  # distributables are never rendered
     vals: dict[str, Any] = {
         "release": {"id": m["release_id"], "manifestSha256": msha, "releasable": m["releasable"],
                     "blockers": len(m["releasable_blockers"])},
@@ -772,6 +957,9 @@ def cmd_render(args: argparse.Namespace, kind: str) -> int:
     contract = load_json(args.contract)
     if sha256_file(args.contract) != m["config_contract"]["sha256"]:
         raise Refusal("CONFIG_CONTRACT_MISMATCH: the contract file is not the one the manifest binds")
+    ce = check_contract(contract)
+    if ce:
+        raise Refusal("refusing to render: " + "; ".join(ce))
     msha = manifest_sha(args.manifest)
     text = render_compose(m, contract, msha) if kind == "compose" else render_helm_values(m, contract, msha)
     return _emit(text, args)
@@ -848,11 +1036,14 @@ def validate_env(contract: dict[str, Any], env: dict[str, str], scope: str) -> t
     """Returns (present_key_names, failures). Failures name keys and reasons, never values."""
     fails: list[str] = []
     keys = _contract_keys(contract)
-    for fk in contract.get("forbidden_keys", []):
-        if fk["name"] in env:
-            fails.append(f"{fk['name']}: FORBIDDEN_KEY ({fk['reason']})")
+    forbidden = {f["name"]: f["reason"] for f in contract.get("forbidden_keys", [])}
+    for name, why in HUMAN_IMPERSONATION_ENV.items():  # fixed in the tool: present at all, even EMPTY, is refused
+        forbidden.setdefault(name, why)
+    for name in sorted(forbidden):
+        if name in env:
+            fails.append(f"{name}: FORBIDDEN_KEY ({forbidden[name]})")
     for name in env:
-        if name not in keys and name not in {f["name"] for f in contract.get("forbidden_keys", [])}:
+        if name not in keys and name not in forbidden:
             fails.append(f"{name}: UNKNOWN_KEY (not in config-contract.json)")
     for k in contract["keys"]:
         if k["scope"] not in ("product", scope):
@@ -972,6 +1163,7 @@ def verify_bundle_dir(m: dict[str, Any], d: str, manifest_path: str, contract_pa
         e.append("CONFIG_CONTRACT_MISMATCH")
         return e
     contract = load_json(cpath)
+    e.extend(check_contract(contract))
     msha = sha256_file(manifest_path)
     expected = {"docker-compose.yml": render_compose(m, contract, msha),
                 ".env.example": render_env_example(contract)}
@@ -1034,6 +1226,9 @@ def guard_release_input(root: str, bundle_files: str | None, exclude: list[str])
         for mm in MUTABLE_TEXT_RE.finditer(text):
             ln = text.count("\n", 0, mm.start()) + 1
             e.append(f"MUTABLE_REFERENCE: {rel}:{ln}: {mm.group(0)}")
+        for mm in IMPERSONATION_TEXT_RE.finditer(text):
+            ln = text.count("\n", 0, mm.start()) + 1
+            e.append(f"HUMAN_IMPERSONATION_OVERRIDE: {rel}:{ln}: {(mm.group(1) or mm.group(2))} is set or wired")
         for mm in IMAGE_LINE_RE.finditer(text):
             ref = mm.group(1)
             if ref.startswith(UNRESOLVED_PREFIX) or "@sha256:" in ref:
@@ -1100,8 +1295,8 @@ def verify_install(m: dict[str, Any], facts: dict[str, Any], manifest_path: str,
     # images
     running = facts.get("containers", [])
     bad = []
-    services = {c["runtime"]["service"]: c for c in m["components"]}
-    for c in m["components"]:
+    services = {c["runtime"]["service"]: c for c in runtime_components(m)}
+    for c in runtime_components(m):
         svc = c["runtime"]["service"]
         want = c["image"]["digest"]
         inst = [r for r in running if r.get("service") == svc]
@@ -1120,7 +1315,7 @@ def verify_install(m: dict[str, Any], facts: dict[str, Any], manifest_path: str,
     # revisions
     bad = []
     revs = facts.get("revisions", {})
-    for c in m["components"]:
+    for c in runtime_components(m):
         if c["kind"] == "third-party":
             continue
         svc, want = c["runtime"]["service"], c["source"].get("commit")
@@ -1136,6 +1331,15 @@ def verify_install(m: dict[str, Any], facts: dict[str, Any], manifest_path: str,
         links.append(("SCHEMA_FINGERPRINT", False, f"manifest has no expected fingerprint (UNMEASURED); install measured {got}"))
     else:
         links.append(("SCHEMA_FINGERPRINT", got == want, f"install {got} manifest {want}"))
+    # no human-impersonation override in any running component's environment (names only; values are never read)
+    en = facts.get("env_names")
+    if en is None:
+        links.append(("NO_IMPERSONATION_OVERRIDE", False, "running environment names not measured"))
+    else:
+        bad = [f"{svc}: {n}" for svc, names in sorted(en.items()) for n in names if n in HUMAN_IMPERSONATION_ENV or n.startswith("<envFrom")]
+        missing = sorted(c["runtime"]["service"] for c in runtime_components(m) if c["runtime"]["service"] not in en)
+        bad += [f"{svc}: environment not measured" for svc in missing]
+        links.append(("NO_IMPERSONATION_OVERRIDE", not bad, "; ".join(bad) or "no running component carries GATEWAY_DEV_SUBJECT / INTENTGATE_PLATFORM_GATEWAY_SUBJECT"))
     # configuration
     cf = facts.get("config", {})
     missing = sorted(set(m["config_contract"]["required_keys"]) - set(cf.get("present", [])))
@@ -1194,6 +1398,7 @@ class Runtime:
                     dig = f"UNVERIFIED({dig})"
                 img_labels = json.loads(_run(["docker", "image", "inspect", j["Image"], "--format", "{{json .Config.Labels}}"]) or "null") or {}
                 res.append({"service": lab.get("com.docker.compose.service"), "name": j["Name"].lstrip("/"),
+                            "env_names": sorted({e.split("=", 1)[0] for e in (j["Config"].get("Env") or [])}),
                             "image_ref": ref, "image_digest": dig, "image_id": j["Image"],
                             "oci_revision": img_labels.get("org.opencontainers.image.revision"),
                             "state": j["State"]["Status"], "restarts": j.get("RestartCount", 0)})
@@ -1207,7 +1412,12 @@ class Runtime:
                     dig = spec_img.split("@", 1)[1] if "@" in spec_img else None
                     if dig and not iid.endswith(dig):
                         dig = f"UNVERIFIED({dig})"
-                    res.append({"service": comp, "name": p["metadata"]["name"], "image_ref": spec_img, "image_digest": dig,
+                    spec_c = next((c for c in p["spec"]["containers"] if c["name"] == cs["name"]), {})
+                    names = {e["name"] for e in spec_c.get("env") or []}
+                    if spec_c.get("envFrom"):
+                        names.add("<envFrom: unmeasurable bulk environment>")
+                    res.append({"service": comp, "name": p["metadata"]["name"], "env_names": sorted(names),
+                                "image_ref": spec_img, "image_digest": dig,
                                 "image_id": iid, "oci_revision": None,
                                 "state": "running" if cs.get("ready") else "not-ready", "restarts": cs.get("restartCount", 0)})
         return res
@@ -1233,8 +1443,12 @@ def collect_facts(m: dict[str, Any], rt: Runtime, install_dir: str | None, contr
     f: dict[str, Any] = {"facts_version": FACTS_VERSION, "install_form": rt.form, "release_id": None}
     cs = rt.containers()
     f["containers"] = [{k: c[k] for k in ("service", "name", "image_digest", "oci_revision", "state")} for c in cs]
+    f["env_names"] = {}
+    for c in cs:
+        f["env_names"].setdefault(c["service"], [])
+        f["env_names"][c["service"]] = sorted(set(f["env_names"][c["service"]]) | set(c["env_names"]))
     revs = {}
-    for c in m["components"]:
+    for c in runtime_components(m):
         r = c["runtime"]["revision_source"]
         svc = c["runtime"]["service"]
         if r["kind"] == "http-json":
@@ -1319,6 +1533,322 @@ def cmd_image_refs(args: argparse.Namespace) -> int:
 
 
 # ----------------------------------------------------------------------------------------------
+# distribution: authenticated registry (pull plan) and offline / air-gapped image bundle (igib/1)
+#
+# Both paths resolve the SAME signed release manifest and the SAME digests. Neither has a tag:
+#   registry  `pull-plan` lists repository@digest per runtime component (optionally re-homed to a customer mirror:
+#             the repository prefix may change, the digest never does); `verify-image-refs` refuses any resolved
+#             reference that is a tag, `latest`, another digest, unmanifested or missing.
+#   offline   an OCI image layout (+ the signed manifest) whose index.json names each runtime component by digest
+#             only (no org.opencontainers.image.ref.name tag); `verify-image-bundle` checks the signature, that the
+#             bundled manifest is the release manifest, the index against the manifest, and every blob by sha256.
+# ----------------------------------------------------------------------------------------------
+
+IMAGE_BUNDLE_VERSION = "igib/1"
+OCI_INDEX_MT = "application/vnd.oci.image.index.v1+json"
+INDEX_MTS = {OCI_INDEX_MT, "application/vnd.docker.distribution.manifest.list.v2+json"}
+MANIFEST_MTS = {"application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"}
+ANN_COMPONENT, ANN_REPOSITORY = "io.intentgate.component", "io.intentgate.repository"
+ANN_RELEASE, ANN_MANIFEST_SHA, ANN_BUNDLE = "io.intentgate.release", "io.intentgate.manifest-sha256", "io.intentgate.image-bundle"
+ANN_REF_NAME = "org.opencontainers.image.ref.name"
+IMAGE_BUNDLE_FILES = {"oci-layout", "index.json", "release-manifest.json", "release-manifest.json.sig"}
+
+
+def _mirror(mirrors: list[str] | None) -> list[tuple[str, str]]:
+    out_ = []
+    for x in mirrors or []:
+        if "=" not in x:
+            raise Refusal(f"MIRROR_FORMAT: {x!r} (SRC_PREFIX=DST_PREFIX)")
+        a, b = x.split("=", 1)
+        if not REPO_RE.match(b.rstrip("/") + "/x") or MUTABLE_TEXT_RE.search(b) or ":" in b.split("/", 1)[-1] or "@" in b:
+            raise Refusal(f"MIRROR_FORMAT: {b!r} is not a bare registry/repository prefix")
+        out_.append((a.rstrip("/"), b.rstrip("/")))
+    return out_
+
+
+def _rehome(repo: str, mirrors: list[tuple[str, str]]) -> str:
+    for a, b in mirrors:
+        if repo == a or repo.startswith(a + "/"):
+            return b + repo[len(a):]
+    return repo
+
+
+def pull_plan(m: dict[str, Any], mirrors: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    plan, missing = [], []
+    for c in runtime_components(m):
+        d = c["image"].get("digest")
+        if not d:
+            missing.append(c["name"])
+            continue
+        plan.append((c["name"], f"{_rehome(c['image']['repository'], mirrors)}@{d}"))
+    if missing:
+        raise Refusal(f"NOT_INSTALLABLE: the manifest has no digest for {', '.join(missing)}; there is no tag fallback")
+    return plan
+
+
+def verify_image_refs(m: dict[str, Any], refs: dict[str, str], mirrors: list[tuple[str, str]]) -> list[str]:
+    e: list[str] = []
+    want = {c["name"]: c for c in runtime_components(m)}
+    for comp, ref in sorted(refs.items()):
+        if re.search(r"(^|[:/])latest($|@)", ref) or MUTABLE_TEXT_RE.search(ref):
+            e.append(f"MUTABLE_REFERENCE: {comp}={ref}")
+            continue
+        if "@" not in ref:
+            e.append(f"TAG_REFERENCE: {comp}={ref} (a tag is never an identity)")
+            continue
+        repo, dig = ref.split("@", 1)
+        if not REPO_RE.match(repo):
+            e.append(f"TAG_REFERENCE: {comp}={ref} (a tag in the repository part)")
+            continue
+        c = want.get(comp)
+        if c is None:
+            e.append(f"UNMANIFESTED_IMAGE: {comp}={ref}")
+            continue
+        if dig != c["image"].get("digest"):
+            e.append(f"DIGEST_MISMATCH: {comp}: {dig} != manifest {c['image'].get('digest')}")
+        if repo not in {c["image"]["repository"], _rehome(c["image"]["repository"], mirrors)}:
+            e.append(f"REPOSITORY_MISMATCH: {comp}: {repo} is neither {c['image']['repository']} nor its declared mirror")
+    for comp in sorted(set(want) - set(refs)):
+        e.append(f"IMAGE_MISSING: {comp}")
+    return e
+
+
+def _blob(layout: str, digest: str) -> str:
+    return os.path.join(layout, "blobs", *digest.split(":", 1))
+
+
+def _walk_blobs(layout: str, desc: dict[str, Any], seen: set[str], e: list[str], where: str) -> None:
+    dig = desc.get("digest", "")
+    if not DIGEST_RE.match(str(dig)):
+        e.append(f"BLOB_DIGEST_FORMAT: {where}: {dig!r}")
+        return
+    p = _blob(layout, dig)
+    if os.path.islink(p) or not os.path.isfile(p):
+        e.append(f"BLOB_MISSING: {where}: {dig}")
+        return
+    data = open(p, "rb").read()
+    if "sha256:" + sha256_bytes(data) != dig:
+        e.append(f"BLOB_DIGEST_MISMATCH: {where}: content of {dig} does not hash to its name")
+        return
+    if desc.get("size") is not None and desc["size"] != len(data):
+        e.append(f"BLOB_SIZE_MISMATCH: {where}: {dig}")
+    if dig in seen:
+        return
+    seen.add(dig)
+    mt = desc.get("mediaType")
+    if mt in INDEX_MTS or mt in MANIFEST_MTS:
+        try:
+            doc = json.loads(data)
+        except Exception:
+            e.append(f"BLOB_NOT_JSON: {where}: {dig} is declared {mt}")
+            return
+        if mt in INDEX_MTS:
+            for i, ch in enumerate(doc.get("manifests", [])):
+                _walk_blobs(layout, ch, seen, e, f"{where}/manifests[{i}]")
+        else:
+            _walk_blobs(layout, doc.get("config", {}), seen, e, f"{where}/config")
+            for i, ly in enumerate(doc.get("layers", [])):
+                _walk_blobs(layout, ly, seen, e, f"{where}/layers[{i}]")
+
+
+def verify_image_layout(m: dict[str, Any], msha: str, layout: str) -> list[str]:
+    e: list[str] = []
+    files, nested = _walk(layout)
+    for n in nested:
+        e.append(f"NESTED_REPOSITORY: {n}")
+    for f in files:
+        full = os.path.join(layout, f)
+        if os.path.islink(full):
+            e.append(f"SYMLINK_IN_IMAGE_BUNDLE: {f}")
+        elif f not in IMAGE_BUNDLE_FILES and not re.match(r"^blobs/sha256/[0-9a-f]{64}$", f.replace(os.sep, "/")):
+            e.append(f"FILE_NOT_IN_IMAGE_BUNDLE: {f}")
+    try:
+        if load_json(os.path.join(layout, "oci-layout")).get("imageLayoutVersion") != "1.0.0":
+            e.append("OCI_LAYOUT_VERSION")
+        idx_text = open(os.path.join(layout, "index.json"), encoding="utf-8").read()
+        idx = json.loads(idx_text)
+    except (FileNotFoundError, json.JSONDecodeError) as ex:
+        return e + [f"OCI_LAYOUT_INVALID: {ex}"]
+    if MUTABLE_TEXT_RE.search(idx_text):
+        e.append("MUTABLE_REFERENCE: index.json contains 'latest'")
+    if idx.get("schemaVersion") != 2 or idx.get("mediaType") != OCI_INDEX_MT:
+        e.append("OCI_INDEX_FORMAT: index.json is not an OCI image index (schemaVersion 2)")
+    ann = idx.get("annotations") or {}
+    if ann.get(ANN_BUNDLE) != IMAGE_BUNDLE_VERSION:
+        e.append(f"IMAGE_BUNDLE_VERSION: {ann.get(ANN_BUNDLE)!r}")
+    if ann.get(ANN_RELEASE) != m["release_id"] or ann.get(ANN_MANIFEST_SHA) != msha:
+        e.append("IMAGE_BUNDLE_NOT_FOR_THIS_MANIFEST: index annotations name another release or manifest")
+    want = {c["name"]: c for c in runtime_components(m)}
+    got: dict[str, str] = {}
+    seen: set[str] = set()
+    for i, d in enumerate(idx.get("manifests", [])):
+        a = d.get("annotations") or {}
+        comp = a.get(ANN_COMPONENT)
+        where = f"index.manifests[{i}]({comp})"
+        if ANN_REF_NAME in a:
+            e.append(f"TAG_REFERENCE: {where} carries {ANN_REF_NAME}={a[ANN_REF_NAME]!r}; images are identified by digest only")
+        if comp in got:
+            e.append(f"DUPLICATE_IMAGE: {comp}")
+        c = want.get(comp)
+        if c is None:
+            e.append(f"UNMANIFESTED_IMAGE: {where} {d.get('digest')}")
+        else:
+            if d.get("digest") != c["image"].get("digest"):
+                e.append(f"DIGEST_MISMATCH: {comp}: bundle {d.get('digest')} != manifest {c['image'].get('digest')}")
+            if a.get(ANN_REPOSITORY) != c["image"]["repository"]:
+                e.append(f"REPOSITORY_MISMATCH: {comp}: bundle names {a.get(ANN_REPOSITORY)!r}")
+        if d.get("mediaType") not in INDEX_MTS | MANIFEST_MTS:
+            e.append(f"MEDIA_TYPE: {where}: {d.get('mediaType')!r}")
+        got[comp] = d.get("digest")
+        _walk_blobs(layout, d, seen, e, where)
+    for comp, c in sorted(want.items()):
+        if not c["image"].get("digest"):
+            e.append(f"NOT_INSTALLABLE: {comp}: the manifest has no digest")
+        elif comp not in got:
+            e.append(f"IMAGE_MISSING: {comp}")
+    blob_dir = os.path.join(layout, "blobs", "sha256")
+    if os.path.isdir(blob_dir):
+        for b in sorted(os.listdir(blob_dir)):
+            if "sha256:" + b not in seen:
+                e.append(f"BLOB_NOT_REFERENCED: sha256:{b} (stale or foreign content)")
+    return e
+
+
+def _safe_extract(tar_path: str, dest: str) -> None:
+    import tarfile
+    with tarfile.open(tar_path) as t:
+        for mem in t.getmembers():
+            n = os.path.normpath(mem.name)
+            if n.startswith(("/", "..")) or os.path.isabs(n) or ".." in n.split(os.sep):
+                raise Refusal(f"TAR_PATH_ESCAPE: {mem.name}")
+            if not (mem.isfile() or mem.isdir()):
+                raise Refusal(f"TAR_MEMBER_TYPE: {mem.name} is not a regular file or directory")
+        t.extractall(dest, filter="data") if hasattr(tarfile, "data_filter") else t.extractall(dest)
+
+
+def assemble_image_bundle(m: dict[str, Any], manifest_path: str, sig_path: str | None, sources: dict[str, str], out_dir: str) -> None:
+    """Build an igib/1 layout from per-component OCI layouts (e.g. `skopeo copy --all docker://<repo>@<digest> oci:<dir>`).
+    The image is selected from each source BY THE MANIFEST DIGEST; a source's tag names are ignored and never copied."""
+    if os.path.exists(out_dir) and os.listdir(out_dir):
+        raise Refusal(f"REFUSED: {out_dir} is not empty")
+    os.makedirs(os.path.join(out_dir, "blobs", "sha256"), exist_ok=True)
+    plan = dict(pull_plan(m, []))
+    msha = sha256_file(manifest_path)
+    descs = []
+    for comp in [c["name"] for c in runtime_components(m)]:
+        src = sources.get(comp)
+        if not src:
+            raise Refusal(f"IMAGE_SOURCE_MISSING: {comp}")
+        dig = plan[comp].rsplit("@", 1)[1]
+        sidx = load_json(os.path.join(src, "index.json"))
+        d = next((x for x in sidx.get("manifests", []) if x.get("digest") == dig), None)
+        if d is None:
+            raise Refusal(f"DIGEST_NOT_IN_SOURCE: {comp}: {src} holds no image {dig} (selection is by digest only)")
+        seen: set[str] = set()
+        err: list[str] = []
+        _walk_blobs(src, d, seen, err, comp)
+        if err:
+            raise Refusal("; ".join(err))
+        for b in seen:
+            shutil.copyfile(_blob(src, b), _blob(out_dir, b))
+        c = next(x for x in runtime_components(m) if x["name"] == comp)
+        descs.append({"mediaType": d["mediaType"], "digest": dig, "size": d.get("size"),
+                      "annotations": {ANN_COMPONENT: comp, ANN_REPOSITORY: c["image"]["repository"]}})
+    open(os.path.join(out_dir, "oci-layout"), "w").write(json.dumps({"imageLayoutVersion": "1.0.0"}) + "\n")
+    idx = {"schemaVersion": 2, "mediaType": OCI_INDEX_MT, "manifests": descs,
+           "annotations": {ANN_BUNDLE: IMAGE_BUNDLE_VERSION, ANN_RELEASE: m["release_id"], ANN_MANIFEST_SHA: msha}}
+    open(os.path.join(out_dir, "index.json"), "wb").write(canonical_bytes(idx))
+    shutil.copyfile(manifest_path, os.path.join(out_dir, "release-manifest.json"))
+    if sig_path:
+        shutil.copyfile(sig_path, os.path.join(out_dir, "release-manifest.json.sig"))
+
+
+def write_deterministic_tar(src_dir: str, tar_path: str) -> None:
+    import tarfile
+    with tarfile.open(tar_path, "w", format=tarfile.PAX_FORMAT) as t:
+        for f in _walk(src_dir)[0]:
+            ti = t.gettarinfo(os.path.join(src_dir, f), arcname=f.replace(os.sep, "/"))
+            ti.mtime, ti.uid, ti.gid, ti.uname, ti.gname, ti.mode = 0, 0, 0, "", "", 0o644
+            with open(os.path.join(src_dir, f), "rb") as fh:
+                t.addfile(ti, fh)
+
+
+def cmd_pull_plan(args: argparse.Namespace) -> int:
+    m = load_json(args.manifest)
+    errs = lint_manifest(m)
+    if errs:
+        raise Refusal("refusing an invalid manifest: " + "; ".join(errs))
+    for comp, ref in pull_plan(m, _mirror(args.mirror)):
+        out(f"{comp}={ref}")
+    return 0
+
+
+def cmd_verify_image_refs(args: argparse.Namespace) -> int:
+    m = load_json(args.manifest)
+    errs = lint_manifest(m)
+    refs: dict[str, str] = {}
+    for line in open(args.refs, encoding="utf-8").read().split():
+        if "=" not in line:
+            errs.append(f"REF_FORMAT: {line!r}")
+            continue
+        k, v = line.split("=", 1)
+        if k in refs and refs[k] != v:
+            errs.append(f"CONFLICTING_REFS: {k}")
+        refs[k] = v
+    errs += verify_image_refs(m, refs, _mirror(args.mirror))
+    for x in errs:
+        out(f"FAIL {x}")
+    out(f"IMAGE_REFS={'PASS' if not errs else 'FAIL'} refs={len(refs)}")
+    return 0 if not errs else 1
+
+
+def cmd_assemble_image_bundle(args: argparse.Namespace) -> int:
+    m = load_json(args.manifest)
+    errs = lint_manifest(m)
+    if errs:
+        raise Refusal("refusing an invalid manifest: " + "; ".join(errs))
+    sources = {}
+    for x in args.source or []:
+        k, _, v = x.partition("=")
+        sources[k] = v
+    assemble_image_bundle(m, args.manifest, args.sig, sources, args.out_dir)
+    e = verify_image_layout(m, sha256_file(args.manifest), args.out_dir)
+    if e:
+        raise Refusal("assembled bundle does not verify: " + "; ".join(e))
+    if args.tar:
+        write_deterministic_tar(args.out_dir, args.tar)
+        out(f"IMAGE_BUNDLE_TAR {args.tar} sha256={sha256_file(args.tar)}")
+    out(f"IMAGE_BUNDLE_ASSEMBLED {args.out_dir} images={len(runtime_components(m))}")
+    return 0
+
+
+def cmd_verify_image_bundle(args: argparse.Namespace) -> int:
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        layout = args.bundle
+        if os.path.isfile(args.bundle):
+            _safe_extract(args.bundle, td)
+            layout = td
+        mp = os.path.join(layout, "release-manifest.json")
+        if not os.path.isfile(mp):
+            raise Refusal("IMAGE_BUNDLE_NO_MANIFEST: the bundle carries no release-manifest.json")
+        data = open(mp, "rb").read()
+        kid = verify_detached(data, os.path.join(layout, "release-manifest.json.sig"), args.key_set, args.trust_anchor,
+                              args.test_public_key, args.allow_test_key, args.pinned_fingerprint)
+        out(f"SIGNATURE=VERIFIED key={kid}")
+        errs: list[str] = []
+        if args.manifest and open(args.manifest, "rb").read() != data:
+            errs.append("MANIFEST_NOT_THE_RELEASE_MANIFEST: the bundled manifest is not byte-identical to the release manifest")
+        m = json.loads(data)
+        errs += lint_manifest(m)
+        errs += verify_image_layout(m, sha256_bytes(data), layout)
+        for x in errs:
+            out(f"FAIL {x}")
+        out(f"IMAGE_BUNDLE={'PASS' if not errs else 'FAIL'} {m.get('release_id')} images={len(runtime_components(m))}")
+        return 0 if not errs else 1
+
+
+# ----------------------------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1397,6 +1927,23 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--root", required=True)
     g.add_argument("--bundle-files")
     g.add_argument("--exclude", action="append")
+    pp = sp.add_parser("pull-plan")
+    pp.add_argument("--manifest", required=True)
+    pp.add_argument("--mirror", action="append", help="SRC_PREFIX=DST_PREFIX: re-home repositories to a customer mirror (digest unchanged)")
+    vr = sp.add_parser("verify-image-refs")
+    vr.add_argument("--manifest", required=True)
+    vr.add_argument("--refs", required=True, help="component=repository@digest lines (image-refs output, or a registry resolution)")
+    vr.add_argument("--mirror", action="append")
+    ab = sp.add_parser("assemble-image-bundle")
+    ab.add_argument("--manifest", required=True)
+    ab.add_argument("--sig")
+    ab.add_argument("--source", action="append", help="component=<OCI image layout dir holding that component's digest>")
+    ab.add_argument("--out-dir", required=True)
+    ab.add_argument("--tar")
+    vib = sp.add_parser("verify-image-bundle")
+    vib.add_argument("--bundle", required=True, help="igib/1 OCI layout directory or tarball")
+    vib.add_argument("--manifest", help="the release manifest the bundle must carry byte-identically")
+    sigargs(vib)
     ir = sp.add_parser("image-refs")
     ir.add_argument("--kind", choices=["compose", "helm"], required=True)
     ir.add_argument("--file", required=True)
@@ -1434,6 +1981,14 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_guard(a)
         if a.cmd == "image-refs":
             return cmd_image_refs(a)
+        if a.cmd == "pull-plan":
+            return cmd_pull_plan(a)
+        if a.cmd == "verify-image-refs":
+            return cmd_verify_image_refs(a)
+        if a.cmd == "assemble-image-bundle":
+            return cmd_assemble_image_bundle(a)
+        if a.cmd == "verify-image-bundle":
+            return cmd_verify_image_bundle(a)
     except Refusal as r:
         out(f"FAIL {r}")
         return 1

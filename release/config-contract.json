@@ -52,6 +52,14 @@
     {
       "name": "INTENTGATE_VERSION",
       "reason": "mutable image tag selection; images come only from the signed manifest by digest"
+    },
+    {
+      "name": "INTENTGATE_PLATFORM_GATEWAY_SUBJECT",
+      "reason": "RELEASE-BLOCKING human-impersonation override (owner decision 2026-10-01): it fed the platform gateway's GATEWAY_DEV_SUBJECT, which attributes every automated bearer call to one principal, e.g. a human's idp URN (EUID-HUM-000001 in the Lab). Present at all, even empty, is refused."
+    },
+    {
+      "name": "GATEWAY_DEV_SUBJECT",
+      "reason": "RELEASE-BLOCKING human-impersonation override (owner decision 2026-10-01): platform 3ea2b27 makes it principal.subject for every bearer call; an empty value is not nullish (subject becomes \"\"). No release config may set it."
     }
   ],
   "excluded_lab_only": [
@@ -110,6 +118,13 @@
         "SPLUNK_PASSWORD"
       ],
       "reason": "Lab-only demo/prospect features and the Lab Splunk integration."
+    },
+    {
+      "component": "platform-gateway",
+      "names": [
+        "GATEWAY_DEV_SUBJECT"
+      ],
+      "reason": "Lab compose.platform.yml maps it from INTENTGATE_PLATFORM_GATEWAY_SUBJECT (default dev-principal) for the D7 operator script, which sets it to EUID-HUM-000001's idp URN uuid. With platform >= 3ea2b27 that attributes every automated bearer call to that human. RELEASE-BLOCKING (owner decision 2026-10-01); forbidden in every release config (forbidden_keys, release-manifest.py HUMAN_IMPERSONATION_ENV)."
     }
   ],
   "keys": [
@@ -524,19 +539,6 @@
       "description": "S2-WP-16 declared MCP server id. Empty disables declaration capture (product default)."
     },
     {
-      "name": "INTENTGATE_PLATFORM_GATEWAY_SUBJECT",
-      "required": false,
-      "secret": false,
-      "generator": null,
-      "validator": {
-        "kind": "any"
-      },
-      "default": null,
-      "forbidden_values": [],
-      "scope": "product",
-      "description": "Presented actor override for governed operator acts."
-    },
-    {
       "name": "INTENTGATE_ENTRA_TENANT_ID",
       "required": false,
       "secret": false,
@@ -848,9 +850,6 @@
       },
       "GATEWAY_DEV_SCOPES": {
         "key": "INTENTGATE_PLATFORM_GATEWAY_SCOPES"
-      },
-      "GATEWAY_DEV_SUBJECT": {
-        "key": "INTENTGATE_PLATFORM_GATEWAY_SUBJECT"
       },
       "PORT": {
         "literal": "4000"
