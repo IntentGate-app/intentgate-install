@@ -48,6 +48,8 @@ jobs:
   compose:
     name: clean-room install (Compose installer, unattended)
     runs-on: ubuntu-24.04
+    # D5 identity secrets are ENVIRONMENT secrets of `clean-room` (required reviewer), never repository secrets.
+    environment: clean-room
     timeout-minutes: 45
     steps:
       - name: Precondition - the workspace is empty (no checkout of any developer repository)
@@ -144,6 +146,8 @@ jobs:
   helm:
     name: clean-room install (Helm on a kind cluster)
     runs-on: ubuntu-24.04
+    # D5 identity secrets are ENVIRONMENT secrets of `clean-room` (required reviewer), never repository secrets.
+    environment: clean-room
     timeout-minutes: 45
     steps:
       - name: Precondition - the workspace is empty
@@ -246,6 +250,8 @@ jobs:
   upgrade-rollback:
     name: upgrade from the previous accepted bundle, then rollback (state equivalence)
     runs-on: ubuntu-24.04
+    # D5 identity secrets are ENVIRONMENT secrets of `clean-room` (required reviewer), never repository secrets.
+    environment: clean-room
     timeout-minutes: 60
     steps:
       - name: A previous ACCEPTED release bundle must exist
