@@ -52,7 +52,10 @@ jobs:
       - name: PSScriptAnalyzer (install.ps1)
         shell: pwsh
         run: |
-          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          # The runner image already ships PSScriptAnalyzer; Install-Module -Force over the loaded module fails
+          # ('currently in use'). Install only when it is absent, then import it explicitly.
+          if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) { Install-Module PSScriptAnalyzer -Force -Scope CurrentUser }
+          Import-Module PSScriptAnalyzer
           $null = [System.Management.Automation.Language.Parser]::ParseFile("$PWD/install.ps1", [ref]$null, [ref]$errs)
           if ($errs) { $errs; exit 1 }
           $r = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
